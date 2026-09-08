@@ -78,24 +78,24 @@ Runner có chặn thiếu RAM/ổ đĩa, không ghi đè run dở và không nh�
 
 Ma trận mở rộng dùng đúng P4, P6, P0, P2, P3 trên hai backbone. Tất cả cấu hình CIL chung được giữ nguyên; microbatch là 256 và tích lũy 4 bước để effective batch vẫn là 1,024, tránh tràn GPU 16 GiB. P6 vẫn kế thừa lịch chia task được tạo từ static T-DDI nên chỉ là nhánh model-informed, không phải phép so sánh backbone-neutral.
 
-Pilot seed 0 đã hoàn tất đủ 10/10 run. Bảng dưới là kết quả **sơ bộ của một seed**, chỉ dùng để xác nhận pipeline và định hướng; không dùng để kết luận protocol trước khi hoàn thành seed 1–4.
+Full study đã hoàn tất đủ **50/50 run** (2 backbone × 5 protocol × 5 seed). Bảng dưới là kết quả tại task cuối, biểu diễn bằng **mean ± sample standard deviation trên 5 seed (0–4)**.
 
 | Backbone | Protocol | Macro-F1 ↑ | Balanced Acc. ↑ | Task Forgetting ↓ |
 |---|---|---:|---:|---:|
-| TabM | P4 Mass-balanced | 0.3792 | 0.4692 | 0.3222 |
-| TabM | P6 Difficulty-balanced | 0.3702 | 0.5121 | 0.3174 |
-| TabM | P0 Random | 0.3601 | 0.5886 | 0.2318 |
-| TabM | **P2 Head→tail** | 0.1775 | **0.6965** | **0.0808** |
-| TabM | **P3 Tail→head** | **0.4192** | 0.3932 | 0.5746 |
-| DDI-GCN | P4 Mass-balanced | 0.3669 | 0.4819 | 0.1081 |
-| DDI-GCN | P6 Difficulty-balanced | 0.4603 | 0.5645 | 0.0844 |
-| DDI-GCN | P0 Random | 0.4640 | 0.6335 | 0.1049 |
-| DDI-GCN | **P2 Head→tail** | 0.2862 | **0.7606** | **0.0479** |
-| DDI-GCN | **P3 Tail→head** | **0.6057** | 0.5608 | 0.3777 |
+| TabM | P4 Mass-balanced | 0.3659 ± 0.0123 | 0.4777 ± 0.0172 | 0.3311 ± 0.0138 |
+| TabM | P6 Difficulty-balanced | 0.3665 ± 0.0195 | 0.4839 ± 0.0228 | 0.3404 ± 0.0390 |
+| TabM | P0 Random | 0.3539 ± 0.0244 | 0.5152 ± 0.0558 | 0.3071 ± 0.0538 |
+| TabM | **P2 Head→tail** | 0.1801 ± 0.0029 | **0.6897 ± 0.0072** | **0.0821 ± 0.0019** |
+| TabM | **P3 Tail→head** | **0.4164 ± 0.0036** | 0.3908 ± 0.0025 | 0.5794 ± 0.0068 |
+| DDI-GCN | P4 Mass-balanced | 0.4116 ± 0.0339 | 0.5308 ± 0.0362 | **0.1155 ± 0.0267** |
+| DDI-GCN | P6 Difficulty-balanced | **0.4256 ± 0.0425** | **0.5390 ± 0.0577** | 0.1315 ± 0.0367 |
+| DDI-GCN | P0 Random | 0.4167 ± 0.0268 | 0.5555 ± 0.0604 | 0.1327 ± 0.0869 |
+| DDI-GCN | **P2 Head→tail** | 0.2760 ± 0.0065 | **0.7786 ± 0.0384** | **0.0538 ± 0.0041** |
+| DDI-GCN | **P3 Tail→head** | **0.5965 ± 0.0112** | 0.5503 ± 0.0122 | 0.3998 ± 0.0146 |
 
-Ở seed 0, P3 có Macro-F1 cao nhất và P2 có balanced accuracy cao nhất/forgetting thấp nhất trên cả hai backbone. Đây vẫn là hai stress test cực đoan; quyết định protocol chính phải dựa trên mean ± sample standard deviation đủ 5 seed và giữ riêng lưu ý model-informed của P6.
+Trên cả hai backbone, P3 có Macro-F1 cao nhất còn P2 có balanced accuracy cao nhất và forgetting thấp nhất. Đây vẫn là hai stress test cực đoan; P6 chỉ là nhánh model-informed từ static T-DDI.
 
-Chạy bốn seed còn lại; runner tự bỏ qua mọi run hoàn tất:
+Các run đã hoàn tất; runner có thể được dùng để kiểm tra và tự bỏ qua mọi run hoàn tất:
 
 ```bash
 tmux new-session -d -s backbone_full \

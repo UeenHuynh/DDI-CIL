@@ -7,7 +7,7 @@
 - Protocol theo thứ tự chạy: P4, P6, P0, P2, P3.
 - Backbone: TabM và DDI-GCN.
 - Pilot: seed 0, tổng cộng 10 run.
-- Full study sau khi pilot hợp lệ: seed 0–4, tổng cộng 50 run; runner tự bỏ qua seed 0 đã xong.
+- Full study đã hoàn tất: seed 0–4, tổng cộng 50/50 run; runner tự bỏ qua các run đã xong.
 - Nguồn cấu hình máy đọc được: `configs/selected_backbone_protocol_study.json`.
 
 P4 là ứng viên chính trung lập. P0 là reference; P2/P3 là stress-test đối xứng. P6 được giữ để kiểm tra khả năng chuyển giao nhưng phải báo cáo là **model-informed từ static T-DDI**, nên không dùng riêng P6 để tuyên bố một protocol độc lập với backbone.
@@ -76,4 +76,4 @@ Runner chạy tuần tự, yêu cầu tối thiểu 12 GiB RAM khả dụng, 50 
 
 ## Điều kiện qua pilot
 
-Chỉ mở seed 1–4 khi cả 10 run seed 0 có đủ `run_summary.md`, `metrics.csv`, `forgetting.csv`, không có NaN/Inf trong metric chính và không có lỗi resource. So sánh protocol cuối cùng phải dùng mean ± sample standard deviation trên đủ 5 seed, không chọn từ seed 0.
+Điều kiện hoàn tất đã đạt: cả 50 run seed 0–4 có đủ `run_summary.md`, `metrics.csv`, `forgetting.csv`, không có NaN/Inf trong metric chính và không có lỗi resource. So sánh protocol cuối cùng dùng mean ± sample standard deviation trên đủ 5 seed, không chọn từ seed 0.
