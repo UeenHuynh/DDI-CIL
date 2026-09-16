@@ -104,6 +104,18 @@ tmux new-session -d -s backbone_full \
 
 Xem contract, cấu hình hai model, resource guard và lệnh chạy seed 1–4 tại `docs/BACKBONE_STUDY.md`.
 
+## Study mở rộng P9–P12
+
+P9–P12 là study long-tail riêng, giữ nguyên backbone T-DDI, method và ngân sách của study khóa nhưng không trộn vào bảng P0–P8. P9 đã hoàn tất 5 seed trên T-DDI (Macro-F1 `0.3877 ± 0.0126`); P10–P12 mới có pilot seed 0. P9 cũng đã chạy đủ 5 seed trên TabM và DDI-GCN trong nhánh backbone riêng. Cấu hình nằm tại `configs/long_tail_protocol_study.json`; builder, runner và metric analyzer nằm trong `scripts/build_long_tail_protocols.py`, `scripts/run_long_tail_protocols.sh` và `scripts/analyze_long_tail_protocol.py`. Chi tiết xem `docs/LONG_TAIL_PROTOCOL_STUDY.md`.
+
+## P9-H8 CL method study
+
+Study riêng `configs/p9_h8_cl_method_study.json` giữ P9-H8 và T-DDI cố định để so C0 fine-tuning, C1 ER fixed-budget, C2 DER++, C4 X-DER thích nghi và C6 Perturb-and-Merge thích nghi với C3 replay + distillation. Các method này đã có đủ 5 seed; C3 đạt Macro-F1 `0.3877 ± 0.0126`, cao nhất trong nhánh offline. C5 OTC/MMOT thích nghi cũng đã chạy 5 seed một lượt qua stream, cùng hai đối chứng C0O/C1O; C1O đạt Macro-F1 `0.2286 ± 0.0090`, cao hơn C5 `0.1637 ± 0.0218`. C7 DEMD để study task-free sau. Runner `scripts/run_p9_cl_methods.sh` ghi output riêng tại `outputs/runs_p9_cl_methods/`. Xem bảng đầy đủ và giới hạn diễn giải tại `docs/P9_H8_CL_METHOD_STUDY.md`.
+
+## C4+GroupPrior và horizon dài
+
+Candidate hiệu chỉnh logit theo nhóm Head/Medium/Tail đã được khóa sau xác nhận 3 seed trên P4-H8, P4-H15 và P9-H15: Macro-F1 test cao hơn C3 ở cả 9/9 cặp. Kiểm tra mở rộng P9-H29 (seed 0–2) cho chênh lệch Macro-F1 trung bình `+0.0688` so với C3, nhưng vẫn chỉ là xác nhận 3 seed. Hiệu chỉnh dùng tỷ lệ nhóm trên validation; kết quả test không dùng để chọn hệ số. Xem `configs/c4_grouprior_candidate.json` và `docs/C4_GROUPPRIOR_PROGRESS.md`.
+
 ## Cấu trúc đang dùng
 
 ```text
@@ -113,6 +125,9 @@ docs/EXPERIMENTS.md                mô tả đầy đủ thử nghiệm
 docs/RESULTS.md                    bảng kết quả và quyết định
 docs/RUNBOOK.md                    lệnh tái lập
 docs/BACKBONE_STUDY.md             study TabM/DDI-GCN riêng
+docs/LONG_TAIL_PROTOCOL_STUDY.md   study P9–P12
+docs/P9_H8_CL_METHOD_STUDY.md      so sánh method trên P9-H8
+docs/C4_GROUPPRIOR_PROGRESS.md     xác nhận C4+GroupPrior
 scripts/run_protocol_study.sh      runner P0–P8, chỉ T-DDI
 scripts/run_selected_backbone_protocols.sh runner P4/P6/P0/P2/P3, TabM/DDI-GCN
 scripts/build_molecular_graph_cache.py tạo graph cache DDI-GCN

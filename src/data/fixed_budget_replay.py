@@ -74,6 +74,9 @@ class FixedBudgetReplayBuffer:
     random_seed: int = 0
     features_by_class: dict[int, np.ndarray] = field(default_factory=dict)
     available_count_by_class: dict[int, int] = field(default_factory=dict)
+    # Indices into the most recent update batch, needed to attach write-time
+    # logits to exactly the exemplars selected by the shared ranking policy.
+    last_selected_indices_by_class: dict[int, np.ndarray] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.total_memory_budget <= 0:
@@ -109,6 +112,7 @@ class FixedBudgetReplayBuffer:
         raw_labels: np.ndarray,
         *,
         ranking_features: np.ndarray | None = None,
+        ranking_order_by_class: dict[int, np.ndarray] | None = None,
     ) -> None:
         """Add unseen classes and rebalance retained model inputs.
 
@@ -138,23 +142,34 @@ class FixedBudgetReplayBuffer:
 
         current_features: dict[int, np.ndarray] = {}
         current_ranking_features: dict[int, np.ndarray] = {}
+        current_indices: dict[int, np.ndarray] = {}
         for class_id in new_classes:
             class_mask = raw_labels == class_id
             class_features = features[class_mask]
             self.available_count_by_class[class_id] = int(class_features.shape[0])
             current_features[class_id] = class_features
             current_ranking_features[class_id] = ranking_features[class_mask]
+            current_indices[class_id] = np.flatnonzero(class_mask)
 
         allocation = max_min_uniform_allocation(
             self.available_count_by_class,
             self.total_memory_budget,
         )
+        self.last_selected_indices_by_class = {}
         for class_id in self.classes:
             target_count = allocation[class_id]
             if class_id in current_features:
                 class_features = current_features[class_id]
-                ranking = self._rank_by_class_mean(current_ranking_features[class_id])
+                if ranking_order_by_class is None:
+                    ranking = self._rank_by_class_mean(current_ranking_features[class_id])
+                else:
+                    ranking = np.asarray(ranking_order_by_class[class_id], dtype=np.int64)
+                    if sorted(ranking.tolist()) != list(range(len(class_features))):
+                        raise ValueError(f"Invalid exemplar ranking for class {class_id}.")
                 retained = class_features[ranking[:target_count]]
+                self.last_selected_indices_by_class[class_id] = current_indices[class_id][
+                    ranking[:target_count]
+                ]
             else:
                 retained = self.features_by_class[class_id][:target_count]
                 if retained.shape[0] != target_count:

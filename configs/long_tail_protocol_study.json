@@ -1,0 +1,65 @@
+{
+  "study_id": "tddi_long_tail_protocol_pilot_v1",
+  "status": "pilot",
+  "relationship_to_locked_study": "separate extension; P0-P8 artifacts are unchanged",
+  "fixed_contract_source": "configs/protocol_study_tddi.json",
+  "scope": {
+    "fixed_backbone": "tddi",
+    "fixed_method": "replay_distill_fixed_budget_uniform",
+    "comparison_protocol": "P4",
+    "candidate_main_protocol": "P9",
+    "ablation_protocol": "P10",
+    "stress_protocols": ["P11", "P12"]
+  },
+  "pilot": {
+    "training_seeds": [0],
+    "p10_primary_beta": 0.999,
+    "p10_sensitivity_betas_supported": [0.9, 0.99, 0.999, 0.9999]
+  },
+  "task_layout": {
+    "num_tasks": 8,
+    "classes_per_task": [38, 20, 20, 20, 20, 20, 20, 20]
+  },
+  "group_policy": {
+    "head": "train_count > 1000",
+    "medium": "101 <= train_count <= 1000",
+    "tail": "train_count <= 100",
+    "test_used_to_build_schedules": false
+  },
+  "protocols": {
+    "P9": {
+      "name": "tail_profile_balanced",
+      "quantiles": 4,
+      "quantile_basis": "rank(log(train_count)) descending; Q1=head, Q4=tail",
+      "objective_weights": {"mass": 1.0, "js_profile": 1.0, "class_count": 1.0},
+      "task_file": "outputs/tasks/tail_profile_balanced_seed{seed}_tasks.json"
+    },
+    "P10": {
+      "name": "effective_number_balanced",
+      "beta": 0.999,
+      "task_file": "outputs/tasks/effective_number_balanced_beta0p999_seed{seed}_tasks.json"
+    },
+    "P11": {
+      "name": "progressive_tail_drift",
+      "head_ratio": {"max": 0.40, "min": 0.05},
+      "tail_ratio": {"min": 0.25, "max": 0.65},
+      "integer_quotas_preserve_global_group_totals": true,
+      "task_file": "outputs/tasks/progressive_tail_drift_seed{seed}_tasks.json"
+    },
+    "P12": {
+      "name": "tail_shock",
+      "shock_task_zero_based": 3,
+      "shock_profile": {"head": 0.10, "medium": 0.10, "tail": 0.80},
+      "normal_profile": "derived from remaining global group totals",
+      "task_file": "outputs/tasks/tail_shock_task3_seed{seed}_tasks.json"
+    }
+  },
+  "evaluation": {
+    "primary": ["final_macro_f1", "final_balanced_accuracy", "task_forgetting"],
+    "long_tail": ["f1_head", "f1_medium", "f1_tail", "head_tail_gap"],
+    "stability": ["final_task_macro_f1_variance", "bwt", "delta_tail", "delta_macro"],
+    "forgetting": ["head_forgetting", "tail_forgetting", "forgetting_imbalance"],
+    "shock": ["shock_drop", "recovery_next_task", "recovery_final", "tail_gain_at_shock", "old_drop_at_shock"]
+  },
+  "runner": "scripts/run_long_tail_protocols.sh"
+}

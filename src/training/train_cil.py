@@ -45,6 +45,7 @@ from src.data.fixed_budget_replay import (
     FixedReplaySampler,
     ReplayEpochAudit,
 )
+from src.data.historical_logits import HistoricalLogitBank
 from src.data.backbone_inputs import load_ddi_gcn_split_arrays
 from src.data.molecular_graphs import MolecularGraphBank, load_graph_bank
 from src.data.replay_buffer import ReplayBuffer
@@ -58,6 +59,9 @@ from src.eval.s02_artifacts import (
     export_s02_artifacts,
 )
 from src.methods.ewc import compute_fisher, ewc_penalty, grow_head_state
+from src.methods.dark_replay import derpp_objective, xder_old_new_margin_loss
+from src.methods.perturb_merge import TaskOptimum, merge_with_new_rows_intact, optimal_merge_alpha
+from src.methods.otc_mmot import OnlineMixtureBank, OTCInference, centroid_preservation_loss
 from src.methods.replay import build_training_arrays as build_replay_training_arrays
 from src.methods.sequential import build_training_arrays as build_sequential_training_arrays
 from src.models.mlp import MLP, preset_config
@@ -68,9 +72,17 @@ from src.utils.seed import set_global_seed
 
 
 FIXED_BUDGET_METHOD = "replay_distill_fixed_budget_uniform"
+FIXED_ER_METHOD = "er_fixed_budget_uniform"
+DERPP_METHOD = "derpp_fixed_budget_uniform"
+XDER_METHOD = "xder_fixed_budget_uniform"
+PERTURB_MERGE_METHOD = "perturb_merge_full_network"
+OTC_METHOD = "otc_mmot_online_adapted"
+FIXED_BUDGET_METHODS = {FIXED_BUDGET_METHOD, FIXED_ER_METHOD, DERPP_METHOD, XDER_METHOD, OTC_METHOD}
+HISTORICAL_LOGIT_METHODS = {DERPP_METHOD, XDER_METHOD}
 LEGACY_REPLAY_METHODS = {"replay", "replay_distill"}
 DISTILL_METHODS = {"replay_distill", FIXED_BUDGET_METHOD}
-ALL_REPLAY_METHODS = LEGACY_REPLAY_METHODS | {FIXED_BUDGET_METHOD}
+ALL_REPLAY_METHODS = LEGACY_REPLAY_METHODS | FIXED_BUDGET_METHODS
+MERGE_STRATEGIES = {"none", "ema_backbone", "selective"}
 
 
 class FocalLoss(nn.Module if nn is not None else object):
@@ -109,6 +121,11 @@ def parse_args() -> argparse.Namespace:
             "replay",
             "replay_distill",
             FIXED_BUDGET_METHOD,
+            FIXED_ER_METHOD,
+            DERPP_METHOD,
+            XDER_METHOD,
+            PERTURB_MERGE_METHOD,
+            OTC_METHOD,
             "ewc",
         ],
         default=FIXED_BUDGET_METHOD,
@@ -119,6 +136,15 @@ def parse_args() -> argparse.Namespace:
         default="tddi",
     )
     parser.add_argument("--batch-size", type=int, default=1024)
+    parser.add_argument(
+        "--sampling",
+        choices=["natural", "class_balanced"],
+        default="natural",
+        help=(
+            "Training sampler for non-replay methods. class_balanced uses "
+            "inverse class-frequency sampling with replacement."
+        ),
+    )
     parser.add_argument(
         "--effective-batch-size",
         type=int,
@@ -140,6 +166,29 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--distill-alpha", type=float, default=1.0)
     parser.add_argument("--temperature", type=float, default=2.0)
     parser.add_argument("--feature-distill-weight", type=float, default=0.5)
+    parser.add_argument("--historical-logit-weight", type=float, default=1.0)
+    parser.add_argument("--replay-ce-weight", type=float, default=1.0)
+    parser.add_argument("--xder-constraint-weight", type=float, default=0.1)
+    parser.add_argument("--xder-margin", type=float, default=0.3)
+    parser.add_argument("--perturb-epsilon", type=float, default=0.5)
+    parser.add_argument("--perturb-side-probability", type=float, default=0.25)
+    parser.add_argument("--otc-centroids-per-class", type=int, default=3)
+    parser.add_argument("--otc-preservation-weight", type=float, default=0.1)
+    parser.add_argument(
+        "--merge-strategy",
+        choices=sorted(MERGE_STRATEGIES),
+        default="none",
+        help=(
+            "Post-task online model merge. ema_backbone merges only shared non-head "
+            "parameters; selective also merges classifier rows for previously seen classes."
+        ),
+    )
+    parser.add_argument(
+        "--merge-alpha",
+        type=float,
+        default=0.5,
+        help="Weight assigned to newly trained parameters during post-task merging.",
+    )
     parser.add_argument("--ewc-lambda", type=float, default=1000.0)
     parser.add_argument("--focal-gamma", type=float, default=1.0)
     parser.add_argument("--graph-cache", type=Path, default=None)
@@ -244,22 +293,40 @@ def build_student_old_indices(
     return [current_seen_map[raw_class] for raw_class in teacher_raw_classes]
 
 
-def method_protocol_name(method: str, memory_per_class: int) -> str:
+def method_protocol_name(
+    method: str,
+    memory_per_class: int,
+    sampling: str = "natural",
+) -> str:
+    if sampling == "class_balanced":
+        if method in ALL_REPLAY_METHODS:
+            raise ValueError("Explicit class-balanced sampling is only valid for non-replay methods.")
+        return f"{method}_class_balanced_sampling"
+    if sampling != "natural":
+        raise ValueError(f"Unsupported sampling policy: {sampling}")
     if method == "replay":
         return f"replay_balanced_per_class_cap{memory_per_class}"
     if method == "replay_distill":
         return f"replay_distill_balanced_per_class_cap{memory_per_class}"
-    if method == FIXED_BUDGET_METHOD:
-        return FIXED_BUDGET_METHOD
+    if method in FIXED_BUDGET_METHODS:
+        return method
     if method == "joint_seen":
         return "cumulative_joint_seen_natural_sampling"
+    if method == PERTURB_MERGE_METHOD:
+        return "perturb_merge_full_network_no_replay"
     return f"{method}_natural_sampling"
 
 
-def sampler_policy_name(method: str) -> str:
+def sampler_policy_name(method: str, sampling: str = "natural") -> str:
+    if sampling == "class_balanced":
+        if method in ALL_REPLAY_METHODS:
+            raise ValueError("Explicit class-balanced sampling is only valid for non-replay methods.")
+        return "inverse_class_frequency_with_replacement"
+    if sampling != "natural":
+        raise ValueError(f"Unsupported sampling policy: {sampling}")
     if method in LEGACY_REPLAY_METHODS:
         return "inverse_class_frequency_with_replacement"
-    if method == FIXED_BUDGET_METHOD:
+    if method in FIXED_BUDGET_METHODS:
         return "current_once_plus_fixed_class_uniform_replay"
     return "natural_shuffle_without_replacement"
 
@@ -309,8 +376,10 @@ def write_run_config(
     }
     resolved: dict[str, Any] = {
         "device": device,
-        "method_protocol": method_protocol_name(args.method, args.memory_per_class),
-        "sampler_policy": sampler_policy_name(args.method),
+        "method_protocol": method_protocol_name(
+            args.method, args.memory_per_class, args.sampling
+        ),
+        "sampler_policy": sampler_policy_name(args.method, args.sampling),
         "validation_policy": "all_seen_classes_for_early_stopping",
         "order_seed": task_spec.get("seed"),
         "training_seed": args.seed,
@@ -318,7 +387,7 @@ def write_run_config(
         "num_tasks": len(task_spec["tasks"]),
         "task_file_sha256": _sha256_file(args.task_file),
     }
-    if args.method == FIXED_BUDGET_METHOD:
+    if args.method in FIXED_BUDGET_METHODS:
         resolved.update(
             {
                 "total_memory_budget": args.total_memory_budget,
@@ -338,6 +407,18 @@ def write_run_config(
                     "training_orchestration": _sha256_file(Path(__file__)),
                 },
             }
+        )
+        if args.method in HISTORICAL_LOGIT_METHODS:
+            resolved["historical_logit_implementation_sha256"] = _sha256_file(
+                PROJECT_ROOT / "src/data/historical_logits.py"
+            )
+        if args.method == OTC_METHOD:
+            resolved["otc_implementation_sha256"] = _sha256_file(
+                PROJECT_ROOT / "src/methods/otc_mmot.py"
+            )
+    if args.method == PERTURB_MERGE_METHOD:
+        resolved["perturb_merge_implementation_sha256"] = _sha256_file(
+            PROJECT_ROOT / "src/methods/perturb_merge.py"
         )
     model_implementation = PROJECT_ROOT / "src/models" / f"{args.variant}.py"
     if args.variant == "tabm":
@@ -419,7 +500,9 @@ def export_s02_evaluation(
             run_id=run_id,
             seed=args.seed,
             method=args.method,
-            method_protocol=method_protocol_name(args.method, args.memory_per_class),
+            method_protocol=method_protocol_name(
+                args.method, args.memory_per_class, args.sampling
+            ),
             train_task=task_id,
             split=split,
             checkpoint_path=checkpoint_path,
@@ -526,6 +609,64 @@ def expand_model_for_seen_classes(
     return model
 
 
+def merge_post_task_state(
+    previous_expanded_state: dict[str, "torch.Tensor"],
+    trained_state: dict[str, "torch.Tensor"],
+    *,
+    strategy: str,
+    alpha: float,
+    previous_seen_map: dict[int, int],
+    current_seen_map: dict[int, int],
+    variant: str,
+) -> dict[str, "torch.Tensor"]:
+    """Merge a trained task model with its expanded pre-task initialization."""
+
+    if strategy not in MERGE_STRATEGIES - {"none"}:
+        raise ValueError(f"Unsupported merge strategy: {strategy}")
+    if not 0.0 <= alpha <= 1.0:
+        raise ValueError("merge alpha must be in [0, 1].")
+    if previous_expanded_state.keys() != trained_state.keys():
+        raise ValueError("Previous and trained states must have identical parameter keys.")
+
+    def interpolate(old: "torch.Tensor", new: "torch.Tensor") -> "torch.Tensor":
+        if old.shape != new.shape:
+            raise ValueError("Cannot merge tensors with different shapes.")
+        if not (torch.is_floating_point(old) or torch.is_complex(old)):
+            return new.detach().cpu().clone()
+        return torch.lerp(old.detach().cpu(), new.detach().cpu(), alpha)
+
+    merged = {
+        key: value.detach().cpu().clone()
+        for key, value in trained_state.items()
+    }
+    for key in merged:
+        if not key.startswith("head."):
+            merged[key] = interpolate(previous_expanded_state[key], trained_state[key])
+
+    if strategy == "selective":
+        old_weight = previous_expanded_state["head.weight"]
+        new_weight = trained_state["head.weight"]
+        old_bias = previous_expanded_state["head.bias"]
+        new_bias = trained_state["head.bias"]
+        for raw_class_id, previous_index in previous_seen_map.items():
+            current_index = current_seen_map[raw_class_id]
+            if variant == "tabm":
+                merged["head.weight"][:, :, current_index] = interpolate(
+                    old_weight[:, :, previous_index], new_weight[:, :, current_index]
+                )
+                merged["head.bias"][:, current_index] = interpolate(
+                    old_bias[:, previous_index], new_bias[:, current_index]
+                )
+            else:
+                merged["head.weight"][current_index] = interpolate(
+                    old_weight[previous_index], new_weight[current_index]
+                )
+                merged["head.bias"][current_index] = interpolate(
+                    old_bias[previous_index], new_bias[current_index]
+                )
+    return merged
+
+
 def train_one_epoch(
     model: nn.Module,
     loader: DataLoader,
@@ -543,9 +684,28 @@ def train_one_epoch(
     theta_star: dict[str, "torch.Tensor"] | None = None,
     ewc_lambda: float = 0.0,
     gradient_accumulation_steps: int = 1,
+    historical_logits: "torch.Tensor | None" = None,
+    historical_raw_order: tuple[int, ...] | None = None,
+    current_count: int | None = None,
+    historical_logit_weight: float = 1.0,
+    replay_ce_weight: float = 1.0,
+    perturb_reference: dict[str, "torch.Tensor"] | None = None,
+    perturb_epsilon: float = 0.5,
+    perturb_side_probability: float = 0.25,
+    xder_old_indices: list[int] | None = None,
+    xder_constraint_weight: float = 0.1,
+    xder_margin: float = 0.3,
+    otc_bank: OnlineMixtureBank | None = None,
+    otc_preservation_weight: float = 0.1,
 ) -> float:
     if gradient_accumulation_steps <= 0:
         raise ValueError("gradient_accumulation_steps must be positive.")
+    if historical_logits is not None and (
+        historical_raw_order is None or current_count is None or current_seen_map is None
+    ):
+        raise ValueError("Historical replay needs class order, current count and class map.")
+    if perturb_reference is not None and not 0.0 <= perturb_side_probability <= 0.5:
+        raise ValueError("Perturbation side probability must be in [0, 0.5].")
     model.train()
     total_loss = 0.0
     total_examples = 0
@@ -559,16 +719,33 @@ def train_one_epoch(
         teacher_model.eval()
 
     optimizer.zero_grad(set_to_none=True)
-    for batch_index, (features, labels) in enumerate(loader):
+    for batch_index, batch in enumerate(loader):
+        features, labels = batch[:2]
+        example_indices = batch[2] if len(batch) > 2 else None
         features = features.to(device)
         labels = labels.to(device)
+        perturbations: dict[str, torch.Tensor] = {}
+        if perturb_reference is not None:
+            draw = float(torch.rand(()))
+            sign = (
+                -1.0 if draw < perturb_side_probability
+                else 1.0 if draw < 2 * perturb_side_probability
+                else 0.0
+            )
+            if sign:
+                with torch.no_grad():
+                    for name, param in model.named_parameters():
+                        anchor = perturb_reference[name]
+                        offset = sign * perturb_epsilon * (param.detach() - anchor)
+                        param.add_(offset)
+                        perturbations[name] = offset
 
         if isinstance(model, TabMClassifier):
             member_logits, student_features = model.forward_members_with_latent(features)
             logits = model.aggregate_member_logits(member_logits)
             member_labels = labels.unsqueeze(1).expand(-1, member_logits.shape[1]).reshape(-1)
             loss = criterion(member_logits.reshape(-1, member_logits.shape[-1]), member_labels)
-        elif teacher_model is not None and student_old_indices:
+        elif (teacher_model is not None and student_old_indices) or otc_bank is not None:
             logits, student_features = model.forward_with_latent(features)
             loss = criterion(logits, labels)
         else:
@@ -595,6 +772,44 @@ def train_one_epoch(
             feature_distill_loss = F.mse_loss(student_features, teacher_features)
             loss = loss + distill_alpha * distill_loss + feature_distill_weight * feature_distill_loss
 
+        if historical_logits is not None:
+            if example_indices is None:
+                raise RuntimeError("Historical replay dataset did not include example indices.")
+            loss = derpp_objective(
+                logits,
+                labels,
+                example_indices,
+                current_count=current_count,
+                historical_logits=historical_logits,
+                historical_raw_order=historical_raw_order,
+                current_seen_map=current_seen_map,
+                criterion=criterion,
+                logit_weight=historical_logit_weight,
+                replay_ce_weight=replay_ce_weight,
+            )
+
+        if xder_old_indices and example_indices is not None:
+            loss = loss + xder_constraint_weight * xder_old_new_margin_loss(
+                logits,
+                labels,
+                example_indices,
+                current_count=current_count,
+                old_indices=xder_old_indices,
+                margin=xder_margin,
+            )
+
+        if otc_bank is not None:
+            if current_seen_map is None or student_features is None:
+                raise RuntimeError("OTC requires a latent encoder and class map.")
+            raw_order = torch.as_tensor(
+                [raw for raw, _ in sorted(current_seen_map.items(), key=lambda item: item[1])],
+                device=device,
+            )
+            otc_bank.update(student_features.detach(), raw_order[labels])
+            loss = loss + otc_preservation_weight * centroid_preservation_loss(
+                student_features, labels, otc_bank, current_seen_map
+            )
+
         if fisher is not None and theta_star is not None and ewc_lambda:
             loss = loss + ewc_lambda * ewc_penalty(model, fisher, theta_star)
 
@@ -616,6 +831,10 @@ def train_one_epoch(
         if group_sample_count <= 0:
             raise RuntimeError("Could not resolve the gradient-accumulation group size.")
         (loss * (labels.shape[0] / group_sample_count)).backward()
+        if perturbations:
+            with torch.no_grad():
+                for name, param in model.named_parameters():
+                    param.sub_(perturbations[name])
         should_step = (
             (batch_index + 1) % gradient_accumulation_steps == 0
             or batch_index + 1 == len(loader)
@@ -646,6 +865,7 @@ def build_fixed_budget_audit_rows(
     current_dataset_size: int,
     epoch_audits: list[ReplayEpochAudit],
     optimizer_steps: int,
+    method: str = FIXED_BUDGET_METHOD,
 ) -> list[dict[str, Any]]:
     """Create O06 rows and verify them against the sampler's emitted indices."""
 
@@ -698,8 +918,8 @@ def build_fixed_budget_audit_rows(
             {
                 "run_id": run_id,
                 "seed": seed,
-                "method": FIXED_BUDGET_METHOD,
-                "method_protocol": FIXED_BUDGET_METHOD,
+                "method": method,
+                "method_protocol": method,
                 "task": task_id,
                 "raw_class_id": class_id,
                 "class_role": "current" if class_id in current_set else "old",
@@ -726,7 +946,7 @@ def build_fixed_budget_audit_rows(
                     float(np.mean(per_epoch_unique)) if per_epoch_unique else 0.0
                 ),
                 "unique_replay_per_epoch_max": max(per_epoch_unique, default=0),
-                "sampler_policy": sampler_policy_name(FIXED_BUDGET_METHOD),
+                "sampler_policy": sampler_policy_name(method),
             }
         )
     return rows
@@ -784,11 +1004,31 @@ def main() -> None:
         raise ValueError("--effective-batch-size must be divisible by --batch-size.")
     gradient_accumulation_steps = effective_batch_size // args.batch_size
     args.effective_batch_size = effective_batch_size
-    if args.method == FIXED_BUDGET_METHOD:
+    if args.method in FIXED_BUDGET_METHODS:
         if args.total_memory_budget <= 0:
             raise ValueError("--total-memory-budget must be positive.")
         if args.replay_draws_per_epoch <= 0:
             raise ValueError("--replay-draws-per-epoch must be positive.")
+    if args.sampling == "class_balanced" and args.method in ALL_REPLAY_METHODS:
+        raise ValueError("--sampling class_balanced is only valid for non-replay methods.")
+    if min(args.historical_logit_weight, args.replay_ce_weight, args.xder_constraint_weight) < 0:
+        raise ValueError("Historical logit, replay CE and X-DER weights must be non-negative.")
+    if args.xder_margin < 0:
+        raise ValueError("--xder-margin must be non-negative.")
+    if not 0.0 <= args.merge_alpha <= 1.0:
+        raise ValueError("--merge-alpha must be in [0, 1].")
+    if args.method == PERTURB_MERGE_METHOD:
+        if args.merge_strategy != "none":
+            raise ValueError("P&M has its own merge and requires --merge-strategy none.")
+        if args.variant != "tddi":
+            raise ValueError("Full-network P&M is currently validated only for T-DDI.")
+        if args.perturb_epsilon < 0:
+            raise ValueError("--perturb-epsilon must be non-negative.")
+    if args.method == OTC_METHOD:
+        if args.variant != "tddi" or args.epochs != 1:
+            raise ValueError("OTC adaptation requires T-DDI and exactly one stream pass (--epochs 1).")
+        if args.otc_centroids_per_class < 1 or args.otc_preservation_weight < 0:
+            raise ValueError("OTC centroids and preservation weight must be valid.")
     if args.variant == "ddi_gcn" and (args.graph_cache is None or args.graph_mapping is None):
         raise ValueError("DDI-GCN requires --graph-cache and --graph-mapping.")
     if args.variant == "ddi_gcn" and args.export_s02:
@@ -843,17 +1083,20 @@ def main() -> None:
     best_task_rows: list[dict[str, Any]] = []
     training_audit_rows: list[dict[str, Any]] = []
     replay_budget_audit_rows: list[dict[str, Any]] = []
+    merge_audit_rows: list[dict[str, Any]] = []
 
     logger.log_event(
         "run_started",
         f"CIL training started run_id={run_id} method={args.method} "
-        f"protocol={method_protocol_name(args.method, args.memory_per_class)} "
+        f"protocol={method_protocol_name(args.method, args.memory_per_class, args.sampling)} "
         f"tasks={num_tasks} device={device}",
         payload_json=json.dumps(
             {
                 "run_id": run_id,
-                "method_protocol": method_protocol_name(args.method, args.memory_per_class),
-                "sampler_policy": sampler_policy_name(args.method),
+                "method_protocol": method_protocol_name(
+                    args.method, args.memory_per_class, args.sampling
+                ),
+                "sampler_policy": sampler_policy_name(args.method, args.sampling),
                 "validation_policy": "all_seen_classes_for_early_stopping",
             },
             sort_keys=True,
@@ -861,7 +1104,7 @@ def main() -> None:
     )
 
     replay_buffer: ReplayBuffer | FixedBudgetReplayBuffer
-    if args.method == FIXED_BUDGET_METHOD:
+    if args.method in FIXED_BUDGET_METHODS:
         replay_buffer = FixedBudgetReplayBuffer(
             total_memory_budget=args.total_memory_budget,
             random_seed=args.seed,
@@ -871,6 +1114,16 @@ def main() -> None:
             memory_per_class=args.memory_per_class,
             random_seed=args.seed,
         )
+    historical_bank = (
+        HistoricalLogitBank(tuple(sorted(first_task_by_class)))
+        if args.method in HISTORICAL_LOGIT_METHODS
+        else None
+    )
+    perturb_merge_history: list[TaskOptimum] = []
+    otc_bank = (
+        OnlineMixtureBank(max_centroids=args.otc_centroids_per_class)
+        if args.method == OTC_METHOD else None
+    )
     previous_model: nn.Module | None = None
     previous_seen_map: dict[int, int] | None = None
     previous_seen_raw_classes: list[int] | None = None
@@ -911,7 +1164,7 @@ def main() -> None:
             graph_bank,
             class_ids=current_raw_classes,
             max_rows=args.max_train_rows_per_task,
-            include_ranking_features=args.method == FIXED_BUDGET_METHOD,
+            include_ranking_features=args.method in FIXED_BUDGET_METHODS,
         )
         validation_seen, _ = load_backbone_split(
             args,
@@ -938,7 +1191,7 @@ def main() -> None:
             )
             train_features = train_seen.features
             train_raw_labels = train_seen.labels
-        elif args.method in {"sequential", "ewc"}:
+        elif args.method in {"sequential", "ewc", PERTURB_MERGE_METHOD}:
             train_features, train_raw_labels = build_sequential_training_arrays(
                 current_train.features,
                 current_train.labels,
@@ -958,13 +1211,30 @@ def main() -> None:
         train_local_labels = remap_labels(train_raw_labels, current_seen_map)
         validation_local_labels = remap_labels(validation_seen.labels, current_seen_map)
 
-        train_dataset = build_tensor_dataset(train_features, train_local_labels)
+        if historical_bank is not None:
+            train_dataset = TensorDataset(
+                torch.from_numpy(np.asarray(train_features, dtype=np.float32)),
+                torch.from_numpy(np.asarray(train_local_labels, dtype=np.int64)),
+                torch.arange(len(train_local_labels), dtype=torch.int64),
+            )
+            if not isinstance(replay_buffer, FixedBudgetReplayBuffer):
+                raise RuntimeError("Historical logit replay requires fixed-budget memory.")
+            replay_logit_array = historical_bank.get_all(replay_buffer)
+            if len(replay_logit_array) != replay_examples_available:
+                raise RuntimeError("Historical logits are not aligned with replay exemplars.")
+            replay_logit_tensor = torch.as_tensor(replay_logit_array, device=device)
+        else:
+            train_dataset = build_tensor_dataset(train_features, train_local_labels)
+            replay_logit_tensor = None
         validation_dataset = build_tensor_dataset(validation_seen.features, validation_local_labels)
         fixed_sampler: FixedReplaySampler | None = None
-        if args.method in LEGACY_REPLAY_METHODS:
+        if args.sampling == "class_balanced":
             sampler = build_balanced_sampler(train_local_labels)
             train_loader = DataLoader(train_dataset, batch_size=args.batch_size, sampler=sampler)
-        elif args.method == FIXED_BUDGET_METHOD:
+        elif args.method in LEGACY_REPLAY_METHODS:
+            sampler = build_balanced_sampler(train_local_labels)
+            train_loader = DataLoader(train_dataset, batch_size=args.batch_size, sampler=sampler)
+        elif args.method in FIXED_BUDGET_METHODS:
             fixed_sampler = FixedReplaySampler(
                 current_count=int(len(current_train.labels)),
                 replay_raw_labels=replay_raw_labels,
@@ -987,11 +1257,11 @@ def main() -> None:
             expected_replay_draws = (
                 samples_drawn_per_epoch * old_class_count / len(seen_raw_classes)
             )
-        elif args.method == FIXED_BUDGET_METHOD and task_id > 0:
+        elif args.method in FIXED_BUDGET_METHODS and task_id > 0:
             expected_replay_draws = float(args.replay_draws_per_epoch)
         logger.log_event(
             "training_protocol",
-            f"task={task_id} sampler={sampler_policy_name(args.method)} "
+            f"task={task_id} sampler={sampler_policy_name(args.method, args.sampling)} "
             f"current_examples={len(current_train.labels)} "
             f"replay_examples={replay_examples_available} "
             f"training_examples={len(train_local_labels)} "
@@ -999,7 +1269,7 @@ def main() -> None:
             payload_json=json.dumps(
                 {
                     "task": task_id,
-                    "sampler_policy": sampler_policy_name(args.method),
+                    "sampler_policy": sampler_policy_name(args.method, args.sampling),
                     "current_examples": int(len(current_train.labels)),
                     "replay_examples_available": replay_examples_available,
                     "training_examples": int(len(train_local_labels)),
@@ -1028,6 +1298,10 @@ def main() -> None:
             ddi_gcn_width=args.ddi_gcn_width,
             ddi_gcn_attention_dim=args.ddi_gcn_attention_dim,
         ).to(device)
+        pre_task_state = {
+            key: value.detach().cpu().clone()
+            for key, value in model.state_dict().items()
+        }
 
         if args.method == "ewc" and fisher_total is not None and previous_seen_map is not None:
             reference_state = model.state_dict()
@@ -1060,6 +1334,7 @@ def main() -> None:
         best_epoch = -1
         best_val_metrics: dict[str, float] | None = None
         best_state: dict[str, Any] | None = None
+        best_otc_state = None
         patience_counter = 0
         epochs_trained = 0
 
@@ -1081,6 +1356,25 @@ def main() -> None:
                 theta_star=theta_star if args.method == "ewc" else None,
                 ewc_lambda=args.ewc_lambda if args.method == "ewc" else 0.0,
                 gradient_accumulation_steps=gradient_accumulation_steps,
+                historical_logits=replay_logit_tensor,
+                historical_raw_order=(historical_bank.raw_class_order if historical_bank else None),
+                current_count=int(len(current_train.labels)),
+                historical_logit_weight=args.historical_logit_weight,
+                replay_ce_weight=args.replay_ce_weight,
+                xder_old_indices=(
+                    [current_seen_map[raw] for raw in previous_seen_map]
+                    if args.method == XDER_METHOD and previous_seen_map else None
+                ),
+                xder_constraint_weight=args.xder_constraint_weight,
+                xder_margin=args.xder_margin,
+                perturb_reference=(
+                    {name: pre_task_state[name].to(device) for name, _ in model.named_parameters()}
+                    if args.method == PERTURB_MERGE_METHOD and task_id > 0 else None
+                ),
+                perturb_epsilon=args.perturb_epsilon,
+                perturb_side_probability=args.perturb_side_probability,
+                otc_bank=otc_bank,
+                otc_preservation_weight=args.otc_preservation_weight,
             )
             if fixed_sampler is not None:
                 if len(fixed_sampler.history) != epoch:
@@ -1095,7 +1389,7 @@ def main() -> None:
                 ):
                     raise RuntimeError("Fixed replay sampler violated its draw-count protocol.")
             val_result = evaluate_model(
-                model,
+                OTCInference(model, otc_bank, current_seen_map) if otc_bank else model,
                 validation_loader,
                 criterion,
                 device,
@@ -1113,7 +1407,12 @@ def main() -> None:
             if best_val_metrics is None or val_metrics["macro_f1"] > best_val_metrics["macro_f1"]:
                 best_epoch = epoch
                 best_val_metrics = dict(val_metrics)
-                best_state = {key: value.cpu() for key, value in model.state_dict().items()}
+                best_state = {
+                    key: value.detach().cpu().clone()
+                    for key, value in model.state_dict().items()
+                }
+                if otc_bank is not None:
+                    best_otc_state = otc_bank.snapshot()
                 checkpoint_path = checkpoint_dir / f"task_{task_id}_model.pt"
                 torch.save(best_state, checkpoint_path)
                 logger.log_event(
@@ -1132,12 +1431,104 @@ def main() -> None:
 
         if best_state is None or best_val_metrics is None:
             raise RuntimeError(f"Task {task_id} did not produce a valid checkpoint.")
+        if otc_bank is not None:
+            if best_otc_state is None:
+                raise RuntimeError("OTC did not capture a centroid checkpoint.")
+            otc_bank.restore(best_otc_state)
 
-        model.load_state_dict(best_state)
         checkpoint_path = checkpoint_dir / f"task_{task_id}_model.pt"
+        premerge_val_macro_f1 = float(best_val_metrics["macro_f1"])
+        postmerge_val_macro_f1 = premerge_val_macro_f1
+        merge_applied = (
+            (args.merge_strategy != "none" or args.method == PERTURB_MERGE_METHOD)
+            and task_id > 0
+        )
+        actual_merge_alpha = args.merge_alpha
+        actual_merge_strategy = args.merge_strategy
+        if args.method == PERTURB_MERGE_METHOD:
+            model.load_state_dict(best_state)
+            current_fisher = {
+                name: value.detach().cpu().clone()
+                for name, value in compute_fisher(model, train_loader, device).items()
+            }
+            current_optimum = {name: value.clone() for name, value in best_state.items()}
+            if task_id > 0:
+                if previous_seen_map is None:
+                    raise RuntimeError("P&M requires the previous class map.")
+                actual_merge_alpha = optimal_merge_alpha(
+                    pre_task_state, current_optimum, current_fisher,
+                    current_seen_map, perturb_merge_history,
+                )
+                best_state = merge_with_new_rows_intact(
+                    pre_task_state, current_optimum,
+                    previous_seen_map, current_seen_map, actual_merge_alpha,
+                )
+                model.load_state_dict(best_state)
+                merged_val_result = evaluate_model(
+                    model, validation_loader, criterion, device, inverse_seen_map,
+                    evaluation_class_indices=sorted(inverse_seen_map),
+                )
+                postmerge_val_macro_f1 = float(merged_val_result.metrics["macro_f1"])
+                torch.save(best_state, checkpoint_path)
+                logger.log_event(
+                    "model_merged",
+                    f"task={task_id} strategy=fisher_perturb alpha={actual_merge_alpha:.4f} "
+                    f"pre_val_macro_f1={premerge_val_macro_f1:.6f} "
+                    f"post_val_macro_f1={postmerge_val_macro_f1:.6f}",
+                )
+            perturb_merge_history.append(
+                TaskOptimum(current_optimum, current_fisher, dict(current_seen_map))
+            )
+            actual_merge_strategy = "fisher_perturb_full_network"
+        elif merge_applied:
+            if previous_seen_map is None:
+                raise RuntimeError("Post-task merging requires a previous class map.")
+            best_state = merge_post_task_state(
+                pre_task_state,
+                best_state,
+                strategy=args.merge_strategy,
+                alpha=args.merge_alpha,
+                previous_seen_map=previous_seen_map,
+                current_seen_map=current_seen_map,
+                variant=args.variant,
+            )
+            model.load_state_dict(best_state)
+            merged_val_result = evaluate_model(
+                model,
+                validation_loader,
+                criterion,
+                device,
+                inverse_seen_map,
+                evaluation_class_indices=sorted(inverse_seen_map),
+            )
+            postmerge_val_macro_f1 = float(merged_val_result.metrics["macro_f1"])
+            torch.save(best_state, checkpoint_path)
+            logger.log_event(
+                "model_merged",
+                f"task={task_id} strategy={args.merge_strategy} alpha={args.merge_alpha:.4f} "
+                f"pre_val_macro_f1={premerge_val_macro_f1:.6f} "
+                f"post_val_macro_f1={postmerge_val_macro_f1:.6f}",
+            )
+        else:
+            model.load_state_dict(best_state)
+        merge_audit_rows.append(
+            {
+                "run_id": run_id,
+                "seed": args.seed,
+                "task": task_id,
+                "strategy": actual_merge_strategy,
+                "alpha": actual_merge_alpha,
+                "merge_applied": merge_applied,
+                "premerge_val_macro_f1": premerge_val_macro_f1,
+                "postmerge_val_macro_f1": postmerge_val_macro_f1,
+            }
+        )
+        pd.DataFrame(merge_audit_rows).to_csv(
+            run_paths["outdir"] / "merge_audit.csv", index=False
+        )
         if args.export_s02 and "validation" in args.s02_splits:
             validation_export_result = evaluate_model(
-                model,
+                OTCInference(model, otc_bank, current_seen_map) if otc_bank else model,
                 validation_loader,
                 criterion,
                 device,
@@ -1163,23 +1554,62 @@ def main() -> None:
                 "best_epoch": best_epoch,
                 "val_macro_f1": best_val_metrics["macro_f1"],
                 "val_balanced_accuracy": best_val_metrics["balanced_accuracy"],
+                "merge_strategy": actual_merge_strategy,
+                "merge_alpha": actual_merge_alpha,
+                "postmerge_val_macro_f1": postmerge_val_macro_f1,
             }
         )
 
         if args.method in ALL_REPLAY_METHODS:
             if isinstance(replay_buffer, FixedBudgetReplayBuffer):
+                ranking_order_by_class = None
+                if otc_bank is not None:
+                    model.eval()
+                    encoded = []
+                    with torch.no_grad():
+                        for start in range(0, len(current_train.features), args.batch_size):
+                            features = torch.as_tensor(
+                                current_train.features[start : start + args.batch_size],
+                                device=device,
+                            )
+                            encoded.append(model.encode(features).detach().cpu().numpy())
+                    ranking_order_by_class = otc_bank.memory_ranking(
+                        np.concatenate(encoded), current_train.labels
+                    )
                 replay_buffer.update(
                     current_train.features,
                     current_train.labels,
                     ranking_features=current_ranking_features,
+                    ranking_order_by_class=ranking_order_by_class,
                 )
             else:
                 replay_buffer.update(current_train.features, current_train.labels)
+            if historical_bank is not None:
+                if not isinstance(replay_buffer, FixedBudgetReplayBuffer):
+                    raise RuntimeError("Historical logit bank requires fixed-budget memory.")
+                historical_bank.after_buffer_update(
+                    replay_buffer,
+                    model,
+                    current_seen_map,
+                    device,
+                    batch_size=args.batch_size,
+                    refresh_new_class_columns=args.method == XDER_METHOD,
+                    future_margin=args.xder_margin,
+                )
+                np.savez_compressed(
+                    memory_dir / f"historical_logits_after_task_{task_id}.npz",
+                    raw_class_order=np.asarray(historical_bank.raw_class_order, dtype=np.int64),
+                    logits=historical_bank.get_all(replay_buffer),
+                )
+            if otc_bank is not None:
+                torch.save(
+                    otc_bank.snapshot(), memory_dir / f"centroids_after_task_{task_id}.pt"
+                )
             replay_buffer.save_summary(memory_dir / "memory_summary.csv")
             replay_buffer.save_snapshot(memory_dir / f"memory_after_task_{task_id}.parquet")
         memory_after = replay_buffer.total_size
 
-        if args.method == FIXED_BUDGET_METHOD:
+        if args.method in FIXED_BUDGET_METHODS:
             if not isinstance(replay_buffer, FixedBudgetReplayBuffer) or fixed_sampler is None:
                 raise RuntimeError("Fixed-budget method is missing its buffer or sampler.")
             memory_after_by_class = dict(replay_buffer.memory_counts)
@@ -1205,6 +1635,7 @@ def main() -> None:
                     epoch_audits=list(fixed_sampler.history),
                     optimizer_steps=epochs_trained
                     * math.ceil(len(train_loader) / gradient_accumulation_steps),
+                    method=args.method,
                 )
             )
             replay_budget_audit = pd.DataFrame(replay_budget_audit_rows)
@@ -1220,7 +1651,9 @@ def main() -> None:
                 "run_id": run_id,
                 "seed": args.seed,
                 "method": args.method,
-                "method_protocol": method_protocol_name(args.method, args.memory_per_class),
+                "method_protocol": method_protocol_name(
+                    args.method, args.memory_per_class, args.sampling
+                ),
                 "task": task_id,
                 "current_class_count": len(current_raw_classes),
                 "old_class_count": old_class_count,
@@ -1231,7 +1664,7 @@ def main() -> None:
                 "validation_dataset_size": int(len(validation_local_labels)),
                 "memory_before": memory_before,
                 "memory_after": memory_after,
-                "sampler_policy": sampler_policy_name(args.method),
+                "sampler_policy": sampler_policy_name(args.method, args.sampling),
                 "samples_drawn_per_epoch": int(samples_drawn_per_epoch),
                 "expected_replay_draws_per_epoch": expected_replay_draws,
                 "expected_current_draws_per_epoch": (
@@ -1248,10 +1681,10 @@ def main() -> None:
                     else np.nan
                 ),
                 "total_memory_budget": (
-                    args.total_memory_budget if args.method == FIXED_BUDGET_METHOD else np.nan
+                    args.total_memory_budget if args.method in FIXED_BUDGET_METHODS else np.nan
                 ),
                 "replay_draws_per_epoch_budget": (
-                    args.replay_draws_per_epoch if args.method == FIXED_BUDGET_METHOD else np.nan
+                    args.replay_draws_per_epoch if args.method in FIXED_BUDGET_METHODS else np.nan
                 ),
                 "distillation_active": teacher_model is not None,
                 "batches_per_epoch": len(train_loader),
@@ -1261,6 +1694,10 @@ def main() -> None:
                 "optimizer_steps": epochs_trained
                 * math.ceil(len(train_loader) / gradient_accumulation_steps),
                 "best_epoch": best_epoch,
+                "merge_strategy": actual_merge_strategy,
+                "merge_alpha": actual_merge_alpha,
+                "merge_applied": merge_applied,
+                "postmerge_val_macro_f1": postmerge_val_macro_f1,
             }
         )
         pd.DataFrame(training_audit_rows).to_csv(
@@ -1320,7 +1757,8 @@ def main() -> None:
             eval_dataset = build_tensor_dataset(eval_arrays.features, eval_labels)
             eval_loader = DataLoader(eval_dataset, batch_size=args.batch_size, shuffle=False)
             eval_result = evaluate_model(
-                model.to(device),
+                OTCInference(model, otc_bank, current_seen_map).to(device)
+                if otc_bank else model.to(device),
                 eval_loader,
                 criterion,
                 device,
@@ -1353,7 +1791,8 @@ def main() -> None:
         seen_test_dataset = build_tensor_dataset(seen_test_arrays.features, seen_test_labels)
         seen_test_loader = DataLoader(seen_test_dataset, batch_size=args.batch_size, shuffle=False)
         final_seen_result = evaluate_model(
-            model.to(device),
+            OTCInference(model, otc_bank, current_seen_map).to(device)
+            if otc_bank else model.to(device),
             seen_test_loader,
             criterion,
             device,
@@ -1408,7 +1847,9 @@ def main() -> None:
         run_paths["run_summary_md"],
         run_id=run_id,
         method=args.method,
-        method_protocol=method_protocol_name(args.method, args.memory_per_class),
+        method_protocol=method_protocol_name(
+            args.method, args.memory_per_class, args.sampling
+        ),
         task_file=args.task_file,
         best_task_metrics=best_task_rows,
         final_test_metrics={

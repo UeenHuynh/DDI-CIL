@@ -1,0 +1,42 @@
+{
+  "candidate_id": "C4-GroupPrior-v1",
+  "status": "locked_after_three_seed_development_confirmation",
+  "core_method": "xder_fixed_budget_uniform",
+  "correction": {
+    "stage": "post_hoc_logits",
+    "groups": {
+      "head": "train_count > 1000",
+      "medium": "100 < train_count <= 1000",
+      "tail": "train_count <= 100"
+    },
+    "direction": "d_g = -log(q_validation_g / p_validation_g)",
+    "application": "z'_c = z_c + lambda * d_group(c)",
+    "lambda": 1.0,
+    "selection_split": "validation",
+    "test_used_for_selection": false
+  },
+  "primary_endpoint": "test_seen_all_macro_f1",
+  "confirmation": {
+    "seeds": [0, 1, 2],
+    "settings": ["P4-H8", "P9-H15", "P4-H15"],
+    "wins_over_c3": "9/9",
+    "analysis": "outputs/runs_c4_grouprior_screening/analysis/three_seed_decision.json"
+  },
+  "deployable_trajectory_evaluation": {
+    "status": "complete",
+    "seeds": [0, 1, 2],
+    "settings": ["P4-H8", "P9-H15", "P4-H15"],
+    "lambda_policy": "fixed_1.0_after_every_task",
+    "direction_source": "seen-class validation q_g/p_g after every task",
+    "result": "retention and forgetting remain better than C3, with lower new-task plasticity than both C3 and raw C4",
+    "analysis": "outputs/runs_c4_grouprior_screening/per_task_analysis/retention_three_seed_summary.csv"
+  },
+  "further_tuning": false,
+  "hybrid_c3_c4": false,
+  "h29_confirmation": {
+    "status": "complete_three_seeds",
+    "seeds": [0, 1, 2],
+    "analysis": "outputs/runs_c4_grouprior_h29/analysis/h29_three_seed_paired_delta_summary.csv"
+  },
+  "deferred": ["five_seed_final_table", "dynamic_random_arrival"]
+}

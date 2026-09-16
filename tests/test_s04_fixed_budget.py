@@ -169,6 +169,16 @@ class S04ProtocolTest(unittest.TestCase):
             sampler_policy_name(FIXED_BUDGET_METHOD),
             "current_once_plus_fixed_class_uniform_replay",
         )
+        self.assertEqual(
+            method_protocol_name("sequential", 50, "class_balanced"),
+            "sequential_class_balanced_sampling",
+        )
+        self.assertEqual(
+            sampler_policy_name("sequential", "class_balanced"),
+            "inverse_class_frequency_with_replacement",
+        )
+        with self.assertRaises(ValueError):
+            sampler_policy_name(FIXED_BUDGET_METHOD, "class_balanced")
 
 
 if __name__ == "__main__":

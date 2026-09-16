@@ -1,0 +1,56 @@
+{
+  "study_id": "p9_full_backbone_study_v1",
+  "status": "running",
+  "objective": "Evaluate P9 fairly on all established backbones before beginning a continual-learning method study",
+  "dataset": "DDI2025",
+  "protocols": {
+    "comparison_baseline": "P4 constrained_mass_balanced",
+    "candidate": "P9 tail_profile_balanced"
+  },
+  "backbones": ["tddi", "tabm", "ddi_gcn"],
+  "fixed_cl_method": "replay_distill_fixed_budget_uniform",
+  "horizon": {
+    "name": "H8",
+    "classes_per_task": [38, 20, 20, 20, 20, 20, 20, 20]
+  },
+  "seeds": [0, 1, 2, 3, 4],
+  "full_matrix": {
+    "runs": 30,
+    "formula": "3 backbones x 2 protocols x 5 seeds",
+    "already_complete": 20,
+    "new_runs_required": 10,
+    "new_runs": "P9 on TabM and DDI-GCN for seeds 0-4"
+  },
+  "training_contract": {
+    "source_commit": "6588915011ee3d0d95519aefc54c4d0a885a44e5",
+    "training_orchestration_sha256": "643b757eecfc9457cdf9db7c746fb0d0c69426b94d839373fd35a6400339498d",
+    "fixed_budget_replay_sha256": "c5bb4cdbdeb26f8943aef6ca9cc50e59e10f8ccccd8e78fc58032ba7b762e7f1",
+    "effective_batch_size": 1024,
+    "microbatch_size_tabm_and_ddi_gcn": 256,
+    "gradient_accumulation_steps": 4,
+    "optimizer": "AdamW",
+    "learning_rate": 0.001,
+    "weight_decay": 0.0001,
+    "max_epochs_per_task": 20,
+    "early_stopping_patience": 5,
+    "total_memory_budget": 6800,
+    "replay_draws_per_epoch": 6800,
+    "checkpoint_selection": "validation_macro_f1_all_seen_classes",
+    "test_used_for_selection": false,
+    "model_merging": "disabled"
+  },
+  "comparison_rules": [
+    "Compare P9 versus P4 within each backbone using paired seeds",
+    "Compare backbones within the same protocol and seed",
+    "Do not mix H15 merging pilot results into this H8 backbone study",
+    "Do not begin method comparison until this matrix is complete and audited"
+  ],
+  "existing_artifacts": {
+    "tddi_p4": "outputs/runs_backbones/p4_constrained_mass_balanced_seed{seed}_replay_distill_fixed_budget_uniform_mlptddi",
+    "tddi_p9": "outputs/runs_long_tail/p9_tail_profile_balanced_seed{seed}_replay_distill_fixed_budget_uniform_mlptddi",
+    "tabm_p4": "outputs/runs_selected_backbones/tabm_p4_constrained_mass_balanced_seed{seed}_replay_distill_fixed_budget_uniform",
+    "ddi_gcn_p4": "outputs/runs_selected_backbones/ddi_gcn_p4_constrained_mass_balanced_seed{seed}_replay_distill_fixed_budget_uniform"
+  },
+  "new_output_root": "outputs/runs_p9_backbones",
+  "runner": "scripts/run_p9_full_backbones.sh"
+}

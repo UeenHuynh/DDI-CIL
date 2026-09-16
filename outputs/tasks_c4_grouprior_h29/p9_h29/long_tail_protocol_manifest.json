@@ -1,0 +1,27 @@
+{
+  "protocols": {
+    "P9": "tail_profile_balanced"
+  },
+  "seeds": [
+    1,
+    2
+  ],
+  "generated_files": [
+    "/media/neeyu/hien_3/uyen/data_splits/outputs/tasks_c4_grouprior_h29/p9_h29/tail_profile_balanced_seed1_tasks.json",
+    "/media/neeyu/hien_3/uyen/data_splits/outputs/tasks_c4_grouprior_h29/p9_h29/tail_profile_balanced_seed2_tasks.json"
+  ],
+  "train_counts_only": true,
+  "test_split_used": false,
+  "hmt_thresholds": {
+    "head": "count > 1000",
+    "medium": "101 <= count <= 1000",
+    "tail": "count <= 100"
+  },
+  "p10_betas": [
+    0.9,
+    0.99,
+    0.999,
+    0.9999
+  ],
+  "p12_shock_task_zero_based": 3
+}

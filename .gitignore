@@ -10,3 +10,7 @@ __pycache__/
 *.pyc
 .venv/
 reference/
+docs/*.pdf
+*.log
+.claude/
+CHAT_TRANSCRIPT*.md

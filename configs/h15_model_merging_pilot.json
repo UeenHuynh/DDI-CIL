@@ -1,0 +1,40 @@
+{
+  "study_id": "tddi_h15_model_merging_pilot_v1",
+  "status": "pilot",
+  "relationship_to_locked_studies": "separate study; H8 P0-P12 artifacts remain unchanged",
+  "baseline": {
+    "backbone": "tddi",
+    "method": "replay_distill_fixed_budget_uniform",
+    "merge_strategy": "none",
+    "description": "Current replay plus logit/feature distillation, rerun on H15 without post-task parameter merging"
+  },
+  "horizon": {
+    "num_tasks": 15,
+    "classes_per_task": [38, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10],
+    "total_classes": 178
+  },
+  "protocols": {
+    "P4": "constrained_mass_balanced",
+    "P9": "tail_profile_balanced"
+  },
+  "merge_variants": {
+    "none": "No parameter merge; the H15 baseline",
+    "ema_backbone": "Interpolate shared non-head parameters; keep the trained classifier",
+    "selective": "Interpolate shared parameters and old-class classifier rows; keep new-class rows trained"
+  },
+  "merge_alpha": 0.5,
+  "pilot_seeds": [0],
+  "training_contract": {
+    "source": "configs/protocol_study_tddi.json",
+    "total_memory_budget": 6800,
+    "replay_draws_per_epoch": 6800,
+    "max_epochs_per_task": 20,
+    "early_stopping_patience": 5,
+    "checkpoint_selection": "validation_macro_f1_all_seen_classes",
+    "test_used_for_selection": false
+  },
+  "fairness_note": "Comparisons within H15 share the same contract. H8 versus H15 is not total-compute controlled because H15 has more task transitions and replay phases.",
+  "task_root": "outputs/tasks_h15",
+  "run_root": "outputs/runs_h15_merging",
+  "runner": "scripts/run_h15_model_merging_pilot.sh"
+}

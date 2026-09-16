@@ -1,0 +1,47 @@
+{
+  "study_id": "p9_h8_tddi_cl_methods_v1",
+  "status": "complete_five_seeds",
+  "dataset": "DDI2025",
+  "protocol": "P9 tail_profile_balanced",
+  "horizon": {"tasks": 8, "classes_per_task": [38, 20, 20, 20, 20, 20, 20, 20]},
+  "backbone": "tddi",
+  "seeds": [0, 1, 2, 3, 4],
+  "fixed_contract": {
+    "train_validation_test": "existing disjoint parquet splits",
+    "checkpoint_selection": "validation macro-F1 on all seen classes",
+    "test_for_selection": false,
+    "focal_gamma": 1.0,
+    "batch_size": 1024,
+    "effective_batch_size": 1024,
+    "learning_rate": 0.001,
+    "weight_decay": 0.0001,
+    "max_epochs_per_task_offline": 20,
+    "early_stopping_patience": 5,
+    "replay_exemplars": 6800,
+    "replay_draws_per_epoch": 6800
+  },
+  "methods": {
+    "C0": {"implementation": "sequential", "training": "offline", "memory": 0},
+    "C1": {"implementation": "er_fixed_budget_uniform", "training": "offline"},
+    "C2": {"implementation": "derpp_fixed_budget_uniform", "training": "offline"},
+    "C3": {"implementation": "replay_distill_fixed_budget_uniform", "training": "offline", "source": "outputs/runs_long_tail/p9_tail_profile_balanced_seed{seed}_replay_distill_fixed_budget_uniform_mlptddi", "rerun": false},
+    "C4": {"implementation": "xder_fixed_budget_uniform", "training": "offline", "adaptation": "expanding-head logit refresh and old/new head margin constraints; no future-class output rows"},
+    "C5": {"implementation": "otc_mmot_online_adapted", "training": "single-pass", "adaptation": "diagonal Gaussian centroids, entropic balanced assignment, preservation loss, centroid-guided replay and Mahalanobis inference"},
+    "C6": {"implementation": "perturb_merge_full_network", "training": "offline", "adaptation": "full-network task-vector perturbation and diagonal-Fisher coefficient; new class head rows kept trained rather than LoRA"},
+    "C7": {"implementation": "DEMD", "training": "task-free", "status": "deferred to dynamic-stream study"}
+  },
+  "online_controls": {
+    "C0O": "C0 with one pass per task",
+    "C1O": "C1 with one pass per task"
+  },
+  "method_references": {
+    "C2": "https://arxiv.org/abs/2004.07211",
+    "C4": "https://arxiv.org/abs/2201.00766",
+    "C5": "https://openaccess.thecvf.com/content/CVPR2026/html/Tran_An_Optimal_Transport-driven_Approach_for_Cultivating_Latent_Space_in_Online_CVPR_2026_paper.html",
+    "C6": "https://arxiv.org/abs/2505.22389",
+    "C7": "https://openaccess.thecvf.com/content/CVPR2025/html/Ye_Online_Task-Free_Continual_Learning_via_Dynamic_Expansionable_Memory_Distribution_CVPR_2025_paper.html"
+  },
+  "interpretation": "Compare C0/C1/C2/C3/C4/C6 in the offline track. Compare C5 against C0O/C1O in the single-pass track. Do not pool offline and single-pass scores as equal-compute comparisons.",
+  "runner": "scripts/run_p9_cl_methods.sh",
+  "output_root": "outputs/runs_p9_cl_methods"
+}
