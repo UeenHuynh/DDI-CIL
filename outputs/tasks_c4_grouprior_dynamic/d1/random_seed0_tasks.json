@@ -1,0 +1,359 @@
+{
+  "protocol": "random",
+  "seed": 0,
+  "num_classes": 178,
+  "tasks": [
+    {
+      "task_id": 0,
+      "classes": [
+        212,
+        121,
+        189,
+        129,
+        136,
+        140,
+        139,
+        6,
+        147,
+        124,
+        112,
+        119,
+        145,
+        60,
+        217,
+        128,
+        171,
+        151,
+        173,
+        203,
+        44,
+        208,
+        134,
+        11,
+        196,
+        184,
+        41,
+        178,
+        62,
+        104,
+        167,
+        108,
+        117,
+        201,
+        127,
+        191,
+        179,
+        47
+      ],
+      "num_classes": 38
+    },
+    {
+      "task_id": 1,
+      "classes": [
+        30,
+        131,
+        157,
+        175,
+        200
+      ],
+      "num_classes": 5
+    },
+    {
+      "task_id": 2,
+      "classes": [
+        186,
+        125,
+        137,
+        156,
+        72
+      ],
+      "num_classes": 5
+    },
+    {
+      "task_id": 3,
+      "classes": [
+        17,
+        135,
+        46,
+        130,
+        73
+      ],
+      "num_classes": 5
+    },
+    {
+      "task_id": 4,
+      "classes": [
+        207,
+        174,
+        1,
+        14,
+        188
+      ],
+      "num_classes": 5
+    },
+    {
+      "task_id": 5,
+      "classes": [
+        142,
+        97,
+        162,
+        180,
+        77
+      ],
+      "num_classes": 5
+    },
+    {
+      "task_id": 6,
+      "classes": [
+        164,
+        215,
+        49,
+        2,
+        170
+      ],
+      "num_classes": 5
+    },
+    {
+      "task_id": 7,
+      "classes": [
+        3,
+        190,
+        185,
+        12,
+        176
+      ],
+      "num_classes": 5
+    },
+    {
+      "task_id": 8,
+      "classes": [
+        55,
+        42,
+        59,
+        183,
+        160
+      ],
+      "num_classes": 5
+    },
+    {
+      "task_id": 9,
+      "classes": [
+        198,
+        25,
+        146,
+        153,
+        43
+      ],
+      "num_classes": 5
+    },
+    {
+      "task_id": 10,
+      "classes": [
+        57,
+        149,
+        22,
+        10,
+        38
+      ],
+      "num_classes": 5
+    },
+    {
+      "task_id": 11,
+      "classes": [
+        111,
+        29,
+        65,
+        209,
+        27
+      ],
+      "num_classes": 5
+    },
+    {
+      "task_id": 12,
+      "classes": [
+        48,
+        213,
+        9,
+        45,
+        197
+      ],
+      "num_classes": 5
+    },
+    {
+      "task_id": 13,
+      "classes": [
+        54,
+        120,
+        24,
+        21,
+        192
+      ],
+      "num_classes": 5
+    },
+    {
+      "task_id": 14,
+      "classes": [
+        7,
+        194,
+        20,
+        181,
+        5
+      ],
+      "num_classes": 5
+    },
+    {
+      "task_id": 15,
+      "classes": [
+        126,
+        187,
+        118,
+        116,
+        63
+      ],
+      "num_classes": 5
+    },
+    {
+      "task_id": 16,
+      "classes": [
+        155,
+        19,
+        148,
+        122,
+        161
+      ],
+      "num_classes": 5
+    },
+    {
+      "task_id": 17,
+      "classes": [
+        4,
+        216,
+        182,
+        143,
+        16
+      ],
+      "num_classes": 5
+    },
+    {
+      "task_id": 18,
+      "classes": [
+        68,
+        32,
+        74,
+        199,
+        40
+      ],
+      "num_classes": 5
+    },
+    {
+      "task_id": 19,
+      "classes": [
+        169,
+        144,
+        204,
+        75,
+        172
+      ],
+      "num_classes": 5
+    },
+    {
+      "task_id": 20,
+      "classes": [
+        26,
+        214,
+        23,
+        177,
+        166
+      ],
+      "num_classes": 5
+    },
+    {
+      "task_id": 21,
+      "classes": [
+        70,
+        50,
+        123,
+        71,
+        163
+      ],
+      "num_classes": 5
+    },
+    {
+      "task_id": 22,
+      "classes": [
+        28,
+        58,
+        138,
+        56,
+        195
+      ],
+      "num_classes": 5
+    },
+    {
+      "task_id": 23,
+      "classes": [
+        133,
+        202,
+        69,
+        13,
+        36
+      ],
+      "num_classes": 5
+    },
+    {
+      "task_id": 24,
+      "classes": [
+        64,
+        53,
+        66,
+        15,
+        110
+      ],
+      "num_classes": 5
+    },
+    {
+      "task_id": 25,
+      "classes": [
+        206,
+        211,
+        152,
+        34,
+        141
+      ],
+      "num_classes": 5
+    },
+    {
+      "task_id": 26,
+      "classes": [
+        114,
+        113,
+        8,
+        218,
+        86
+      ],
+      "num_classes": 5
+    },
+    {
+      "task_id": 27,
+      "classes": [
+        150,
+        165,
+        159,
+        115,
+        158
+      ],
+      "num_classes": 5
+    },
+    {
+      "task_id": 28,
+      "classes": [
+        67,
+        31,
+        210,
+        37,
+        132
+      ],
+      "num_classes": 5
+    }
+  ]
+}

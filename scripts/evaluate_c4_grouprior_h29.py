@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Evaluate C3, C4, and locked C4-GroupPrior-v1 throughout P9-H29."""
+"""Evaluate C3, C4, and locked C4-GroupPrior-v1 throughout an H29 stream."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ from src.training.train_cil import load_task_spec, resolve_device
 
 
 LOCKED_LAMBDA = 1.0
-SETTING = "P9-H29"
+DEFAULT_SETTING = "P9-H29"
 
 
 def require_complete(run_dir: Path) -> None:
@@ -53,13 +53,13 @@ def require_complete(run_dir: Path) -> None:
         raise RuntimeError(f"Run has no run_completed event: {run_dir}")
 
 
-def bwt_table(retention: pd.DataFrame, seed: int) -> pd.DataFrame:
+def bwt_table(retention: pd.DataFrame, seed: int, setting: str) -> pd.DataFrame:
     rows: list[dict[str, object]] = []
     for candidate, part in retention.groupby("candidate", sort=False):
         final_task = int(part.eval_task.max())
         old = part.loc[part.eval_task < final_task]
         rows.append({
-            "setting": SETTING,
+            "setting": setting,
             "seed": seed,
             "candidate": candidate,
             "bwt": float((old.final_task_f1 - old.new_task_f1).mean()),
@@ -72,6 +72,8 @@ def main() -> None:
     parser.add_argument("--c3-run", required=True, type=Path)
     parser.add_argument("--c4-run", required=True, type=Path)
     parser.add_argument("--seed", required=True, type=int)
+    parser.add_argument("--setting", default=DEFAULT_SETTING)
+    parser.add_argument("--summary-name", default="h29_seed0_summary.csv")
     parser.add_argument("--device", default="cuda")
     parser.add_argument(
         "--output", type=Path,
@@ -115,7 +117,7 @@ def main() -> None:
     endpoint_rows: list[dict[str, object]] = []
     score_rows: list[dict[str, object]] = []
     calibrator_rows: list[dict[str, object]] = []
-    append_c3_scores(score_rows, SETTING, args.seed, args.c3_run)
+    append_c3_scores(score_rows, args.setting, args.seed, args.c3_run)
 
     seen_raw: list[int] = []
     for task_id, task in enumerate(tasks):
@@ -146,7 +148,7 @@ def main() -> None:
         for candidate, predictions in predictions_by_candidate.items():
             for row in metric_rows(test_labels, predictions, local_groups):
                 endpoint_rows.append({
-                    "setting": SETTING, "seed": args.seed, "candidate": candidate,
+                    "setting": args.setting, "seed": args.seed, "candidate": candidate,
                     "train_task": task_id, "lambda": LOCKED_LAMBDA if candidate == "C4+GroupPrior" else 0.0,
                     **row,
                 })
@@ -156,7 +158,7 @@ def main() -> None:
                 )
                 eval_mask = np.isin(test_labels, eval_local)
                 score_rows.append({
-                    "setting": SETTING, "seed": args.seed, "candidate": candidate,
+                    "setting": args.setting, "seed": args.seed, "candidate": candidate,
                     "train_task": task_id, "eval_task": eval_task_id,
                     "task_f1": float(f1_score(
                         test_labels[eval_mask], predictions[eval_mask], labels=eval_local,
@@ -165,7 +167,7 @@ def main() -> None:
                 })
         for local_index, raw_class in enumerate(seen_raw):
             calibrator_rows.append({
-                "setting": SETTING, "seed": args.seed, "task": task_id,
+                "setting": args.setting, "seed": args.seed, "task": task_id,
                 "class_id": raw_class,
                 "group": frequency_group(count_by_class[raw_class]),
                 "validation_direction": float(direction[local_index]),
@@ -190,7 +192,7 @@ def main() -> None:
     c3_predictions = infer(c3_model, test.features, device).argmax(1)
     for row in metric_rows(test.labels, c3_predictions, full_groups):
         endpoint_rows.append({
-            "setting": SETTING, "seed": args.seed, "candidate": "C3",
+            "setting": args.setting, "seed": args.seed, "candidate": "C3",
             "train_task": len(tasks) - 1, "lambda": 0.0, **row,
         })
 
@@ -199,10 +201,13 @@ def main() -> None:
     scores = pd.DataFrame(score_rows)
     scores["task_age"] = scores.train_task - scores.eval_task
     retention = retention_table(scores)
-    bwt = bwt_table(retention, args.seed)
+    bwt = bwt_table(retention, args.seed, args.setting)
     retention_summary = retention.groupby(
         ["setting", "seed", "candidate"], sort=False
     )[["new_task_f1", "final_task_f1", "retention_ratio", "forgetting"]].mean().reset_index()
+    final_old = retention.loc[retention.eval_task < len(tasks) - 1].groupby(
+        ["setting", "seed", "candidate"], sort=False
+    ).final_task_f1.mean().rename("final_old_task_f1").reset_index()
     final_endpoints = endpoints.loc[endpoints.train_task == len(tasks) - 1].copy()
     all_metrics = final_endpoints.loc[final_endpoints.group == "all", [
         "setting", "seed", "candidate", "precision", "recall", "f1",
@@ -216,6 +221,7 @@ def main() -> None:
     summary = (
         all_metrics.merge(group_f1, on=["setting", "seed", "candidate"], validate="one_to_one")
         .merge(retention_summary, on=["setting", "seed", "candidate"], validate="one_to_one")
+        .merge(final_old, on=["setting", "seed", "candidate"], validate="one_to_one")
         .merge(bwt, on=["setting", "seed", "candidate"], validate="one_to_one")
     )
 
@@ -223,14 +229,14 @@ def main() -> None:
     scores.to_csv(args.output / "task_matrix_long.csv", index=False)
     retention.to_csv(args.output / "retention_per_task.csv", index=False)
     bwt.to_csv(args.output / "bwt.csv", index=False)
-    summary.to_csv(args.output / "h29_seed0_summary.csv", index=False)
+    summary.to_csv(args.output / args.summary_name, index=False)
     pd.DataFrame(calibrator_rows).to_csv(args.output / "calibrators.csv", index=False)
     scores.groupby(["candidate", "task_age"], sort=True).task_f1.agg(
         ["count", "mean", "std"]
     ).reset_index().to_csv(args.output / "performance_by_task_age.csv", index=False)
     (args.output / "evaluation_contract.json").write_text(json.dumps({
         "candidate": "C4-GroupPrior-v1",
-        "setting": SETTING,
+        "setting": args.setting,
         "seed": args.seed,
         "lambda": LOCKED_LAMBDA,
         "lambda_tuned_on_h29": False,
