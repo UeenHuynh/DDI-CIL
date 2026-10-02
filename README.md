@@ -114,7 +114,13 @@ Study riêng `configs/p9_h8_cl_method_study.json` giữ P9-H8 và T-DDI cố đ�
 
 ## C4+GroupPrior và horizon dài
 
-Candidate hiệu chỉnh logit theo nhóm Head/Medium/Tail đã được khóa sau xác nhận 3 seed trên P4-H8, P4-H15 và P9-H15: Macro-F1 test cao hơn C3 ở cả 9/9 cặp. Kiểm tra mở rộng P9-H29 (seed 0–2) cho chênh lệch Macro-F1 trung bình `+0.0688` so với C3, nhưng vẫn chỉ là xác nhận 3 seed. Hiệu chỉnh dùng tỷ lệ nhóm trên validation; kết quả test không dùng để chọn hệ số. Xem `configs/c4_grouprior_candidate.json` và `docs/C4_GROUPPRIOR_PROGRESS.md`.
+Candidate hiệu chỉnh logit theo nhóm Head/Medium/Tail đã được khóa sau xác nhận trên P4-H8, P4-H15 và P9-H15. P4-H29 và P9-H29 đều đã hoàn tất 5 seed trên T-DDI. C4+GroupPrior đạt Macro-F1 `0.3897 ± 0.0139` trên P4-H29 và `0.3874 ± 0.0153` trên P9-H29, thắng C3 ở 5/5 seed của mỗi setting. Hiệu chỉnh dùng tỷ lệ nhóm trên validation; test không dùng để chọn hệ số.
+
+Pilot P4-H8 seed 0 trên backbone khác không xác nhận khả năng chuyển giao: TabM đạt Macro-F1 `0.3792 / 0.2090 / 0.1552` và DDI-GCN đạt `0.3669 / 0.2616 / 0.2692` cho C3 / C4 / C4+GroupPrior. Vì GroupPrior không thắng C3 trên cả hai backbone, chưa mở rộng pilot này sang nhiều seed. Xem `configs/c4_grouprior_candidate.json` và `docs/C4_GROUPPRIOR_PROGRESS.md`.
+
+Xác nhận lịch động D1-H29 đã hoàn tất đủ seed 0–4 trên T-DDI. Macro-F1 của C3, C4 thô và C4+GroupPrior lần lượt là `0.3223 ± 0.0326`, `0.2908 ± 0.0422` và `0.3990 ± 0.0201`; GroupPrior hơn C3 `+0.0768 ± 0.0368` và thắng 5/5 seed. Đổi lại, BWT của GroupPrior thấp hơn C3 ở cả 5 seed.
+
+Bốn diagnostic D1-H29 seed 0 đã hoàn tất. Joint offline T-DDI đạt Macro-F1 `0.8179`, unlimited replay + distillation đạt `0.6490`, frozen balanced head + GroupPrior đạt `0.5833`, dynamic class prior đạt `0.4145`, còn C4 thô là `0.2585`. Kết quả chỉ ra replay/retention là đòn bẩy lớn nhất; candidate kế tiếp nên ghép unlimited hoặc adaptive replay với balanced classifier và prior thay vì đổi backbone ngay. Chi tiết nằm tại `configs/c4_next_candidate_diagnostics.json`.
 
 ## Cấu trúc đang dùng
 

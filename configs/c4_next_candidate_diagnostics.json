@@ -1,0 +1,46 @@
+{
+  "status": "complete",
+  "setting": "D1-H29",
+  "seed": 0,
+  "backbone": "tddi",
+  "selection_split": "validation",
+  "evaluation_split": "test",
+  "diagnostics": [
+    {
+      "name": "joint_offline_natural",
+      "status": "complete",
+      "run": "outputs/runs_c3_c4_diagnostics/j0_joint_natural_seed0",
+      "test_macro_f1": 0.8178768538976241,
+      "test_balanced_accuracy": 0.819470432264461
+    },
+    {
+      "name": "unlimited_replay_h29",
+      "status": "complete",
+      "slurm_job_id": 22368,
+      "dependency": "afterok:22367",
+      "method": "replay_distill",
+      "memory_per_class": 1000000,
+      "sampler": "inverse_class_frequency_with_replacement",
+      "run": "outputs/runs_c4_next_candidate_diagnostics/d1_h29_unlimited_replay_seed0",
+      "test_macro_f1": 0.648988,
+      "test_balanced_accuracy": 0.894588
+    },
+    {
+      "name": "c4_groupprior_h29_frozen_balanced_classifier",
+      "status": "complete",
+      "slurm_job_id": 22367,
+      "source": "outputs/runs_c4_grouprior_dynamic/d1/d1_tddi_c4_seed0",
+      "run": "outputs/runs_c4_next_candidate_diagnostics/d1_h29_seed0_classifier_prior",
+      "test_macro_f1": 0.5525133300276518
+    },
+    {
+      "name": "c4_dynamic_class_prior",
+      "status": "complete",
+      "slurm_job_id": 22367,
+      "source": "outputs/runs_c4_grouprior_dynamic/d1/d1_tddi_c4_seed0",
+      "run": "outputs/runs_c4_next_candidate_diagnostics/d1_h29_seed0_classifier_prior",
+      "selected_strength": 0.75,
+      "test_macro_f1": 0.4144599861155337
+    }
+  ]
+}

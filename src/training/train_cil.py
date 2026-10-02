@@ -161,6 +161,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--memory-per-class", type=int, default=50)
+    parser.add_argument(
+        "--skip-memory-snapshots",
+        action="store_true",
+        help=(
+            "Do not persist per-task replay feature parquet snapshots. Intended for "
+            "diagnostics with very large replay buffers; memory summaries are still written."
+        ),
+    )
     parser.add_argument("--total-memory-budget", type=int, default=6800)
     parser.add_argument("--replay-draws-per-epoch", type=int, default=6800)
     parser.add_argument("--distill-alpha", type=float, default=1.0)
@@ -1606,7 +1614,8 @@ def main() -> None:
                     otc_bank.snapshot(), memory_dir / f"centroids_after_task_{task_id}.pt"
                 )
             replay_buffer.save_summary(memory_dir / "memory_summary.csv")
-            replay_buffer.save_snapshot(memory_dir / f"memory_after_task_{task_id}.parquet")
+            if not args.skip_memory_snapshots:
+                replay_buffer.save_snapshot(memory_dir / f"memory_after_task_{task_id}.parquet")
         memory_after = replay_buffer.total_size
 
         if args.method in FIXED_BUDGET_METHODS:

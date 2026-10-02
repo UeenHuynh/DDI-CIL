@@ -77,3 +77,16 @@ Runner chạy tuần tự, yêu cầu tối thiểu 12 GiB RAM khả dụng, 50 
 ## Điều kiện qua pilot
 
 Điều kiện hoàn tất đã đạt: cả 50 run seed 0–4 có đủ `run_summary.md`, `metrics.csv`, `forgetting.csv`, không có NaN/Inf trong metric chính và không có lỗi resource. So sánh protocol cuối cùng dùng mean ± sample standard deviation trên đủ 5 seed, không chọn từ seed 0.
+
+## Mở rộng C4+GroupPrior
+
+Study 50 run phía trên dùng C3 `replay_distill_fixed_budget_uniform`. Pilot method riêng đã kiểm tra C4 `xder_fixed_budget_uniform` và GroupPrior đã khóa trên P4-H8, seed 0, cho TabM và DDI-GCN. Jobs `22161` và `22163` hoàn tất trên `mantis-05` (RTX A6000). Kết quả pilot được báo cáo riêng theo backbone và không thay thế bảng C3 hiện có.
+
+| Backbone | C3 Macro-F1 | C4 thô Macro-F1 | C4+GroupPrior Macro-F1 |
+|---|---:|---:|---:|
+| TabM | **0.3792** | 0.2090 | 0.1552 |
+| DDI-GCN | **0.3669** | 0.2616 | 0.2692 |
+
+Pilot không qua điều kiện mở rộng: C4+GroupPrior không thắng C3 trên backbone nào. DDI-GCN tăng nhẹ `+0.0076` so với C4 thô, trong khi TabM giảm `−0.0538`. Vì vậy candidate hiện tại chỉ được giữ làm kết quả xác nhận trên T-DDI; chưa chạy full seed trên TabM/DDI-GCN.
+
+Các entrypoint của pilot là `scripts/launch_c4_grouprior_p4_h8_backbone_pilot_slurm.sh`, `scripts/worker_c4_grouprior_p4_h8_backbone_pilot.sh` và `scripts/evaluate_c4_grouprior_p4_h8_backbone.py`. GroupPrior tiếp tục dùng validation để tính hướng hiệu chỉnh với `lambda=1.0`; test chỉ dùng để đánh giá.

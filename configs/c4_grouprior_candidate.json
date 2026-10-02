@@ -34,9 +34,47 @@
   "further_tuning": false,
   "hybrid_c3_c4": false,
   "h29_confirmation": {
-    "status": "complete_three_seeds",
-    "seeds": [0, 1, 2],
-    "analysis": "outputs/runs_c4_grouprior_h29/analysis/h29_three_seed_paired_delta_summary.csv"
+    "status": "complete_five_seeds",
+    "seeds": [0, 1, 2, 3, 4],
+    "wins_over_c3_macro_f1": "5/5",
+    "analysis": "outputs/runs_c4_grouprior_h29/analysis/h29_five_seed_paired_delta_summary.csv"
   },
-  "deferred": ["five_seed_final_table", "dynamic_random_arrival"]
+  "p4_h29_confirmation": {
+    "status": "complete_five_seeds",
+    "seeds": [0, 1, 2, 3, 4],
+    "wins_over_c3_macro_f1": "5/5",
+    "analysis": "outputs/runs_c4_grouprior_p4_h29/analysis/h29_five_seed_paired_delta_summary.csv"
+  },
+  "execution_progress_2026_09_25": {
+    "cluster_node": "mantis-05",
+    "gpu": "rtx_a6000",
+    "p9_h29_seeds_3_4": {
+      "slurm_job": 22161,
+      "status": "complete"
+    },
+    "p4_h8_cross_backbone_seed0": {
+      "slurm_job": 22163,
+      "backbones": ["tabm", "ddi_gcn"],
+      "status": "complete_pilot_failed_expansion_gate",
+      "dependency": "afterok:22161",
+      "analysis_root": "outputs/runs_c4_grouprior_backbones/analysis"
+    },
+    "d1_h29_seeds_1_4": {
+      "status": "complete_five_seeds",
+      "seed_1_2_slurm_job": 22182,
+      "seed_3_4_slurm_job": 22183,
+      "dependency": "22183 afterok:22182",
+      "target_seeds": [0, 1, 2, 3, 4],
+      "analysis_root": "outputs/runs_c4_grouprior_dynamic/d1/analysis"
+    }
+  },
+  "d1_h29_confirmation": {
+    "status": "complete_five_seeds",
+    "seeds": [0, 1, 2, 3, 4],
+    "wins_over_c3_macro_f1": "5/5",
+    "macro_f1_gain_vs_c3_mean": 0.0767771651672831,
+    "macro_f1_gain_vs_c3_std": 0.0368473575240079,
+    "analysis": "outputs/runs_c4_grouprior_dynamic/d1/analysis/d1_five_seed_paired_delta_summary.csv"
+  },
+  "deferred": []
 }

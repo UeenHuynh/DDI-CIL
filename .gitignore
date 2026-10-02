@@ -9,8 +9,16 @@ dist/
 __pycache__/
 *.pyc
 .venv/
+.venv-*/
 reference/
 docs/*.pdf
 *.log
+.tar
+outputs/tasks_c4_grouprior_dynamic/d1/random_seed[1-4]_tasks.json
+outputs/tasks_c4_grouprior_h29/p4_h29/
+outputs/tasks_c4_grouprior_h29/p9_h29/*seed3_4*
+outputs/tasks_c4_grouprior_h29/p9_h29/*seed3_tasks.json
+outputs/tasks_c4_grouprior_h29/p9_h29/*seed4_tasks.json
+outputs/tasks_extra_seed5/
 .claude/
 CHAT_TRANSCRIPT*.md

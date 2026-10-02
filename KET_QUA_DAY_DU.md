@@ -1,6 +1,6 @@
 # DDI2025-CIL — tổng hợp đầy đủ kết quả
 
-**Cập nhật: 16/09/2026.** Tài liệu này gom các kết quả hiện có trong workspace. `P` là protocol chia lớp, `H` là số task (horizon), `C` là phương pháp học liên tục. Tất cả metric ở **task cuối trên tập test** trừ khi ghi khác. `↑` là cao hơn tốt hơn; `↓` là thấp hơn tốt hơn. Dấu `±` biểu diễn **sample standard deviation** giữa các seed, không phải khoảng tin cậy. Task forgetting lấy dòng `mean_old_tasks` của `forgetting.csv` hoặc bảng tổng hợp tương ứng. Không so trực tiếp giữa các bảng có protocol, horizon, backbone, track huấn luyện hoặc ngân sách khác nhau.
+**Cập nhật: 27/09/2026.** Tài liệu này gom các kết quả hiện có trong workspace. `P` là protocol chia lớp, `H` là số task (horizon), `C` là phương pháp học liên tục. Tất cả metric ở **task cuối trên tập test** trừ khi ghi khác. `↑` là cao hơn tốt hơn; `↓` là thấp hơn tốt hơn. Dấu `±` biểu diễn **sample standard deviation** giữa các seed, không phải khoảng tin cậy. Task forgetting lấy dòng `mean_old_tasks` của `forgetting.csv` hoặc bảng tổng hợp tương ứng. Không so trực tiếp giữa các bảng có protocol, horizon, backbone, track huấn luyện hoặc ngân sách khác nhau.
 
 ## 1. Bản đồ thí nghiệm và trạng thái
 
@@ -12,8 +12,8 @@
 | Long-tail P10–P12 | H8, T-DDI | Pilot seed 0 | `outputs/runs_long_tail/` |
 | Phương pháp C0–C6 | P9-H8, T-DDI | 5 seed cho mỗi method đã chạy; C7 chưa chạy | `outputs/runs_p9_cl_methods/analysis/method_summary.csv` |
 | Model merging | P4/P9-H15, T-DDI | Pilot seed 0, 6 run | `outputs/runs_h15_merging/` |
-| C4+GroupPrior | P4-H8, P4-H15, P9-H15, P9-H29 | Xác nhận 3 seed mỗi setting | `outputs/runs_c4_grouprior_screening/`, `outputs/runs_c4_grouprior_h29/` |
-| Lịch động D1-H29 | T-DDI, C3/C4/C4+GroupPrior | Hoàn tất seed 0 | `outputs/runs_c4_grouprior_dynamic/d1/` |
+| C4+GroupPrior | P4/P9-H29 T-DDI; P4-H8/H15, P9-H15; pilot backbone | P4/P9-H29 đủ 5 seed; H8/H15 xác nhận 3 seed; TabM/DDI-GCN pilot seed 0 | `outputs/runs_c4_grouprior_*/` |
+| Lịch động D1-H29 | T-DDI, C3/C4/C4+GroupPrior | Hoàn tất 5 seed 0–4 | `outputs/runs_c4_grouprior_dynamic/d1/` |
 
 H8 dùng `[38, 20 × 7]`; H15 dùng `[38, 10 × 14]`; H29 dùng `[38, 5 × 28]`. Mỗi lịch có 178 lớp. Ngân sách replay cấp theo task khiến tổng compute khác nhau giữa các horizon; vì vậy chưa thể quy chênh lệch H8/H15/H29 chỉ cho độ dài chuỗi.
 
@@ -117,34 +117,66 @@ Nguồn: `outputs/runs_c3_c4_diagnostics/analysis/plasticity_retention_summary.c
 
 ## 7. C4+GroupPrior: xác nhận H8/H15/H29
 
-Candidate `C4-GroupPrior-v1` tại `configs/c4_grouprior_candidate.json` chia lớp theo số mẫu train: Head `>1000`, Medium `101–1000`, Tail `<=100`. Sau mỗi task, tỷ lệ dự đoán và tỷ lệ thật của ba nhóm trên **validation** được dùng để cộng bias vào logit C4 với `lambda=1.0`. Test chỉ dùng để đánh giá. Đây là xác nhận **3 seed 0–2** mỗi setting, chưa phải bảng 5 seed.
+Candidate `C4-GroupPrior-v1` tại `configs/c4_grouprior_candidate.json` chia lớp theo số mẫu train: Head `>1000`, Medium `101–1000`, Tail `<=100`. Sau mỗi task, tỷ lệ dự đoán và tỷ lệ thật của ba nhóm trên **validation** được dùng để cộng bias vào logit C4 với `lambda=1.0`. Test chỉ dùng để đánh giá. P4-H29 và P9-H29 đã đủ 5 seed; các setting H8/H15 trong bảng đầu vẫn dùng 3 seed.
 
 | Setting | C3 Macro-F1 | C4 thô Macro-F1 | C4+GroupPrior Macro-F1 | Gain ghép cặp so C3 | Số cặp thắng |
 |---|---:|---:|---:|---:|---:|
 | P4-H8 | 0.3903 | 0.3712 | 0.4258 | +0.0355 ± 0.0067 | 3/3 |
 | P4-H15 | 0.3461 | 0.3518 | 0.4041 | +0.0579 ± 0.0047 | 3/3 |
 | P9-H15 | 0.3473 | 0.3325 | 0.3919 | +0.0445 ± 0.0047 | 3/3 |
-| P9-H29 | 0.3170 | 0.2763 | 0.3858 | +0.0688 ± 0.0069 | 3/3 |
+| P9-H29 | 0.3178 | 0.2868 | **0.3874** | +0.0697 ± 0.0152 | 5/5 |
+| P4-H29 | 0.3295 | 0.3034 | **0.3897** | +0.0602 ± 0.0198 | 5/5 |
 
-Các cột Macro-F1 là **mean của đúng ba seed 0–2**. Gain là trung bình chênh lệch từng cặp cùng seed; `±` là standard deviation của chênh lệch ghép cặp. Nguồn H8/H15: `outputs/runs_c4_grouprior_screening/analysis/three_seed_gain_summary.csv`, `three_seed_paired_gains.csv`, `per_task_analysis/final_endpoint_summary.csv`. Nguồn H29: `outputs/runs_c4_grouprior_h29/analysis/h29_three_seed_aggregate.csv` và `h29_three_seed_paired_delta_summary.csv`.
+Các dòng H8/H15 dùng ba seed 0–2; P4-H29 và P9-H29 dùng năm seed 0–4. Gain là trung bình chênh lệch từng cặp cùng seed; `±` là standard deviation của chênh lệch ghép cặp. Nguồn H8/H15: `outputs/runs_c4_grouprior_screening/analysis/three_seed_gain_summary.csv`, `three_seed_paired_gains.csv`, `per_task_analysis/final_endpoint_summary.csv`. Nguồn P9-H29: `outputs/runs_c4_grouprior_h29/analysis/h29_five_seed_aggregate.csv`; nguồn P4-H29: `outputs/runs_c4_grouprior_p4_h29/analysis/h29_five_seed_aggregate.csv`.
 
-### 7.1 Chi tiết P9-H29, 3 seed
+### 7.1 P4-H29, 5 seed
 
 | Method | Macro-F1 ↑ | Balanced acc. ↑ | Head F1 ↑ | Medium F1 ↑ | Tail F1 ↑ | Forgetting ↓ |
 |---|---:|---:|---:|---:|---:|---:|
-| C3 | 0.3170 ± 0.0189 | 0.4544 ± 0.0087 | 0.1065 ± 0.0020 | 0.3541 ± 0.0181 | 0.3904 ± 0.0343 | 0.2842 ± 0.0182 |
-| C4 thô | 0.2763 ± 0.0066 | **0.6110 ± 0.0150** | 0.1914 ± 0.0187 | 0.3636 ± 0.0090 | 0.2584 ± 0.0116 | **0.2461 ± 0.0192** |
-| C4+GroupPrior | **0.3858 ± 0.0177** | 0.4800 ± 0.0091 | **0.2003 ± 0.0200** | **0.3971 ± 0.0084** | **0.4645 ± 0.0233** | 0.2525 ± 0.0262 |
+| C3 | 0.3295 ± 0.0159 | 0.4398 ± 0.0207 | 0.1102 ± 0.0139 | 0.3406 ± 0.0132 | 0.4241 ± 0.0399 | 0.2925 ± 0.0259 |
+| C4 thô | 0.3034 ± 0.0090 | **0.5852 ± 0.0222** | 0.1874 ± 0.0157 | 0.3768 ± 0.0167 | 0.3092 ± 0.0158 | **0.2668 ± 0.0181** |
+| C4+GroupPrior | **0.3897 ± 0.0139** | 0.4641 ± 0.0197 | **0.1954 ± 0.0131** | **0.3861 ± 0.0094** | **0.4823 ± 0.0208** | 0.2945 ± 0.0232 |
 
-C4+GroupPrior hơn C3 ở H29 về Macro-F1 `+0.0688 ± 0.0069`, balanced accuracy `+0.0256 ± 0.0081`, Head F1 `+0.0938 ± 0.0186` và Tail F1 `+0.0741 ± 0.0111`; forgetting giảm trung bình `0.0316` (chênh lệch C4+GroupPrior trừ C3 là `−0.0316 ± 0.0208`). C4 thô có balanced accuracy cao nhất nhưng Macro-F1 thấp hơn C3. Phân tích theo task trên H8/H15 cho thấy hiệu chỉnh cải thiện retention/forgetting nhưng giảm F1 task mới so với C3 và C4 thô. Nguồn: `outputs/runs_c4_grouprior_screening/per_task_analysis/retention_three_seed_summary.csv`; diễn giải: `docs/C4_GROUPPRIOR_PROGRESS.md`.
+C4+GroupPrior thắng C3 về Macro-F1 ở 5/5 seed, với gain ghép cặp `+0.0602 ± 0.0198`; đồng thời tăng `+0.0863 ± 0.0176` so với C4 thô. C4 thô vẫn có balanced accuracy cao nhất và forgetting thấp nhất.
 
-### 7.2 Chẩn đoán calibration 5 seed, khác study xác nhận
+### 7.2 Chi tiết P9-H29, 5 seed
+
+| Method | Macro-F1 ↑ | Balanced acc. ↑ | Head F1 ↑ | Medium F1 ↑ | Tail F1 ↑ | Forgetting ↓ |
+|---|---:|---:|---:|---:|---:|---:|
+| C3 | 0.3178 ± 0.0146 | 0.4533 ± 0.0350 | 0.1063 ± 0.0139 | 0.3479 ± 0.0165 | 0.3963 ± 0.0342 | 0.2778 ± 0.0479 |
+| C4 thô | 0.2868 ± 0.0264 | **0.5932 ± 0.0534** | 0.1862 ± 0.0245 | 0.3635 ± 0.0143 | 0.2834 ± 0.0581 | **0.2542 ± 0.0455** |
+| C4+GroupPrior | **0.3874 ± 0.0153** | 0.4711 ± 0.0150 | **0.1936 ± 0.0278** | **0.3934 ± 0.0092** | **0.4736 ± 0.0212** | 0.2551 ± 0.0204 |
+
+C4+GroupPrior hơn C3 về Macro-F1 `+0.0697 ± 0.0152`, thắng 5/5 seed; balanced accuracy tăng trung bình `+0.0178`, thắng 4/5 seed; forgetting giảm trung bình `0.0228`. C4 thô có balanced accuracy cao nhất và forgetting trung bình thấp nhất nhưng Macro-F1 thấp hơn C3.
+
+### 7.3 Pilot chuyển backbone, P4-H8 seed 0
+
+| Backbone | C3 Macro-F1 | C4 thô Macro-F1 | C4+GroupPrior Macro-F1 |
+|---|---:|---:|---:|
+| TabM | **0.3792** | 0.2090 | 0.1552 |
+| DDI-GCN | **0.3669** | 0.2616 | 0.2692 |
+
+Pilot hoàn tất trong jobs `22161` và `22163` trên `mantis-05`. Candidate không thắng C3 trên backbone nào nên chưa mở rộng sang nhiều seed. Nguồn: `outputs/runs_c4_grouprior_backbones/analysis/`.
+
+### 7.4 Chẩn đoán calibration 5 seed, khác study xác nhận
 
 Một chẩn đoán hậu xử lý classifier trên P9-H8/C4 có đủ **5 seed** tại `outputs/runs_c4_classifier_diagnostics/analysis/calibration_test_summary.csv`: C4 thô `0.3723 ± 0.0126` Macro-F1; `group_prior` `0.4271 ± 0.0118`; `class_prior` `0.4164 ± 0.0129`. Đây là phép thử calibration chẩn đoán, không thay cho candidate `C4-GroupPrior-v1` đã khóa và không được gộp với kết quả 3 seed ở bảng trên. File nguồn chứa thêm precision, recall và F1 theo Head/Medium/Tail.
 
-## 8. D1-H29 seed 0 và giới hạn kết luận
+## 8. D1-H29, 5 seed
 
-- Lịch động `D1-H29` dùng thứ tự lớp ngẫu nhiên, 38 lớp ban đầu và 28 update × 5 lớp. Seed 0 đã hoàn tất: Macro-F1 của C3 là `0.3430`, C4 thô `0.2585`, C4+GroupPrior `0.4239`; gain C4+GroupPrior so với C3 là `+0.0808`. Tail prediction ratio q/p lần lượt là `3.16`, `13.44` và `1.60`. F1 lớp mới của GroupPrior cao hơn C3 `+0.1624`, nhưng forgetting cao hơn `+0.0081` và BWT thấp hơn `0.1389`. Đây là một seed, chưa đủ kết luận về độ bền theo thứ tự lớp. Nguồn: `outputs/runs_c4_grouprior_dynamic/d1/analysis/`.
+Lịch động `D1-H29` dùng thứ tự lớp ngẫu nhiên, 38 lớp ban đầu và 28 update × 5 lớp.
+
+| Method | Macro-F1 ↑ | Balanced acc. ↑ | Head F1 ↑ | Medium F1 ↑ | Tail F1 ↑ | Forgetting ↓ | BWT ↑ |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| C3 | 0.3223 ± 0.0326 | 0.4773 ± 0.0546 | 0.1169 ± 0.0238 | 0.3443 ± 0.0215 | 0.4031 ± 0.0693 | 0.3056 ± 0.0542 | **−0.1926 ± 0.0458** |
+| C4 thô | 0.2908 ± 0.0422 | **0.5995 ± 0.0668** | 0.1972 ± 0.0309 | 0.3670 ± 0.0411 | 0.2844 ± 0.0763 | **0.2749 ± 0.0456** | −0.2753 ± 0.0510 |
+| C4+GroupPrior | **0.3990 ± 0.0201** | 0.4848 ± 0.0247 | **0.2033 ± 0.0361** | **0.4019 ± 0.0140** | **0.4880 ± 0.0294** | 0.2888 ± 0.0329 | −0.2790 ± 0.0339 |
+
+C4+GroupPrior hơn C3 về Macro-F1 `+0.0768 ± 0.0368` và thắng 5/5 seed. New-task F1 tăng `+0.1167 ± 0.0362`, cũng thắng 5/5. Balanced accuracy chỉ thắng 3/5; forgetting thấp hơn ở 3/5 và giảm trung bình `0.0168`; BWT thấp hơn ở 5/5. Nguồn: `outputs/runs_c4_grouprior_dynamic/d1/analysis/d1_five_seed_aggregate.csv` và `d1_five_seed_paired_delta_summary.csv`.
+
+### 8.1 Diagnostic trần hiệu năng, D1-H29 seed 0
+
+Joint offline T-DDI đạt Macro-F1 `0.8179` và balanced accuracy `0.8195`, cho thấy khoảng cách tới `0.60` không phải trần biểu diễn offline của backbone. Ba phép thử còn lại đã hoàn tất: C4 thô `0.2585`, C4+GroupPrior `0.4239`, C4+dynamic class prior `0.4145`, frozen balanced classifier `0.5525`, frozen balanced classifier+GroupPrior `0.5833`, và unlimited replay H29 `0.6490` với BA `0.8946`. Tất cả dùng T-DDI, chọn cấu hình trên validation và chỉ dùng test để báo cáo. Chi tiết nằm tại `configs/c4_next_candidate_diagnostics.json`.
 - P10–P12 và model merging H15 mới có một seed. C4+GroupPrior trên H8/H15/H29 mới được xác nhận với ba seed mỗi setting.
 - So sánh H8/H15/H29 chưa kiểm soát tổng compute và tổng replay draws. Cùng số replay mỗi task dẫn tới tổng replay khác nhau khi số task tăng.
 - Các metric có thể đổi hướng ưu thế: P2/P3, C3/C4, C4 thô/C4+GroupPrior cho thấy Macro-F1, balanced accuracy, Tail F1 và forgetting không đồng biến. Khi báo cáo kết luận, cần giữ các metric cạnh nhau.
